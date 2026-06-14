@@ -167,6 +167,91 @@ opened at all the audit still runs (uncached) with a note on stderr. `--reingest
 
 Re-audit after applying any fix to verify it actually moved the numbers.
 
+### Per-session waterfall — `cram audit --session`
+
+Where the aggregate audit shows averages across sessions, `--session` drills into
+one session and shows a **per-request token waterfall** — exactly which turn blew
+up the context and why:
+
+```bash
+cram audit --session <id>        # id = a session-id prefix, or a transcript path
+cram audit --session <id> --json
+```
+
+```
+Session ba4ba1d1 · myrepo · 2026-06-14 14:49 · 24 requests
+
+  Turn     Input     CacheR     CacheW   Output    Context         Δ  Note
+  --------------------------------------------------------------------------
+     7         2     31,578         12      693     31,592    +1,647  Read audit.py; Read events.py
+     8         2     38,254     29,842    3,370     68,098   +29,713 ⚠  ⚠ events.py → 12,307 tok result (49 KB)
+   ...
+  Carried waste (oversized results re-read every later turn):
+    cram/events.py: 12,307 tok × 18 later turns = 221,526 carried tok
+    → est. carried read cost: ~$0.1070 (anthropic pricing)
+  Redundant re-reads:   2× cram/events.py
+  Failed tool calls (retry loops): 1
+```
+
+Each row carries the token classes (input / cache-read / cache-write / output),
+the context delta vs the previous request, and the tool activity that caused a
+jump. Below the table it attributes the session's wasted tokens to concrete
+causes — oversized results carried by every later turn, redundant re-reads,
+failed calls. Use it to turn an aggregate finding ("oversized results") into the
+exact turn and file to fix.
+
+---
+
+## Verify an optimizer — `cram rig`
+
+The audit tells you *where* tokens go and recommends a fix. `cram rig` answers the
+next question: **did the fix (or a third-party tool) actually help — without
+breaking the task?** The metric is **tokens at fixed success**: a tool that drops
+tokens by failing the task isn't saving anything, so token cost is only compared
+among runs that still pass an oracle.
+
+It verifies any context optimizer two ways — your own cram context layer, or a
+third-party tool like [claude-context](https://github.com/zilliztech/claude-context):
+
+**Observational** — A/B your *real* sessions, no setup. Splits sessions by whether
+the optimizer was actually used and compares cost:
+
+```bash
+cram rig --observe cram              # did cram's context layer help your sessions?
+cram rig --observe claude-context    # did claude-context deliver its claimed savings?
+```
+
+> Observational is a *signal*, not proof — the two groups aren't matched on task
+> difficulty (it says so in the output). For proof, use the controlled mode.
+
+**Controlled** — run a fixed task corpus through each provider, score success with
+an oracle (the task's own tests), and compare tokens at equal success:
+
+```bash
+cram rig <corpus.json> --providers baseline,cram,claude-context
+cram rig <corpus.json> --dry-run     # resolve the grid + availability, run nothing
+```
+
+A corpus is a JSON list of tasks, each with a prompt, a fixture directory, and a
+`check` command that defines "done" (exit 0 = success). See
+[`examples/rig/corpus.example.json`](examples/rig/corpus.example.json) for two
+runnable, spec-driven fixtures.
+
+| Provider | What it is |
+|---|---|
+| `baseline` | no context tool — the control arm |
+| `cram` | cram's own context layer (`cram task`) |
+| `claude-context` | semantic code-search MCP server (third-party) |
+| `headroom`, `context-mode` | stubs — report what's needed to wire them |
+
+Live runs drive Claude Code headless (`claude -p`) and **reuse your existing
+Claude Code login — no API key required**. Each provider's `availability()`
+reports exactly what's missing (e.g. claude-context needs an embedding key + a
+vector DB), so the grid never silently benchmarks nothing.
+
+cram stays **advisory**: it recommends and verifies optimizers but never mutates
+your pipeline — you wire the fix, cram confirms it landed.
+
 ---
 
 ## The context layer
@@ -512,7 +597,8 @@ across different checkouts or machines.
 | `cram gotcha "..." [path]` | Append a non-obvious trap to GOTCHAS.md |
 | `cram continue [path]` | Extend grace period — keep context across a mid-task commit |
 | `cram status [path]` | Show each context file with age, line count, and token budget status |
-| `cram audit [--days N] [--all] [--json] [--report [FILE]] [--compare A B] [--reingest]` | Audit Claude Code / Cursor / Codex transcripts: pre-edit context share, context bloat, retry loops, findings; `--report` emits shareable markdown |
+| `cram audit [--days N] [--all] [--json] [--report [FILE]] [--compare A B] [--session ID] [--reingest]` | Audit Claude Code / Cursor / Codex transcripts: pre-edit context share, context bloat, retry loops, findings; `--report` emits shareable markdown; `--session ID` shows a per-request token waterfall for one session |
+| `cram rig <corpus.json> [--providers ...] [--dry-run]` / `cram rig --observe <optimizer> [--days N]` | Verify a context optimizer — controlled (tokens at fixed success over a corpus) or observational (A/B an optimizer over your real sessions) |
 | `cram ui [path]` | TUI dashboard — pending decisions, session efficiency, context health (requires `cram-ai[tui]`) |
 | `cram benchmark [path]` | Show token and cost comparison across delivery strategies |
 | `cram doctor [path]` | Health check — models, hooks, git, context files |

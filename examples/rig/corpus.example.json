@@ -1,0 +1,16 @@
+{
+  "tasks": [
+    {
+      "id": "fix-failing-test",
+      "prompt": "A unit test in this repo is failing. Find the bug in the source and fix it so the test passes. Do not edit the test.",
+      "fixture": "fixtures/fix-failing-test",
+      "check": ["python", "-m", "pytest", "-q"]
+    },
+    {
+      "id": "add-cli-flag",
+      "prompt": "Add a --verbose flag to the CLI that prints debug output, with a test covering it.",
+      "fixture": "fixtures/add-cli-flag",
+      "check": ["python", "-m", "pytest", "-q"]
+    }
+  ]
+}

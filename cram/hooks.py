@@ -17,6 +17,9 @@ _GLOBAL_CLAUDE_MD_BLOCK = """\
 > answering any question or writing any code. Pass the task description as the
 > argument (e.g. get_context("fix the rate limiter")), or call with no arguments
 > to reload the last task's context.
+> You do NOT need a new session per task. When the task changes mid-session,
+> call get_context("the next task") again — it reloads focused context inline,
+> no restart or TUI needed. Keep working in a single session.
 > Run `cram doctor` if tools are missing.
 """
 

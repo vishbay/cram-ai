@@ -292,6 +292,30 @@ class TestDetector:
         with pytest.raises(ValueError):
             rig._detector_of('baseline')
 
+    def test_cram_layer_has_get_context_detector(self):
+        # Enables `cram rig --observe cram` — A/B a user's own context-layer use.
+        assert rig._detector_of('cram') == {'kind': 'mcp_tool', 'match': 'get_context'}
+
+    def test_observe_cram_splits_on_get_context_calls(self, tmp_path, monkeypatch):
+        td = tmp_path / 'proj'
+        td.mkdir()
+        monkeypatch.setattr('cram.audit._project_transcript_dir',
+                            lambda r, d=str(td): d)
+        def write(name, used_layer):
+            msgs = [{'type': 'tool_use', 'name': 'Read', 'input': {'file_path': 'a.py'}}]
+            if used_layer:
+                msgs.append({'type': 'tool_use',
+                             'name': 'mcp__cram-ai__get_context', 'input': {}})
+            msgs.append({'usage': {'input_tokens': 0, 'cache_read_input_tokens': 1000,
+                                   'cache_creation_input_tokens': 0, 'output_tokens': 0}})
+            with open(td / name, 'w') as f:
+                for m in msgs:
+                    f.write(json.dumps(m) + '\n')
+        write('with.jsonl', True)
+        write('without.jsonl', False)
+        obs = rig.observe_optimizer(str(tmp_path), 'cram', days=3650)
+        assert obs['on']['sessions'] == 1 and obs['off']['sessions'] == 1
+
 
 class TestObserve:
     def _proj(self, tmp_path, monkeypatch):

@@ -125,8 +125,15 @@ class CramAdapter:
     is best-effort: a failure to pre-load context degrades to baseline rather
     than failing the run, so a broken context tool shows up as "no savings",
     not a crash.
+
+    `detector` lets `cram rig --observe cram` A/B a user's own sessions by
+    whether the context layer was used — it matches cram's MCP tool
+    ('mcp__cram-ai__get_context'). Note this only sees the MCP delivery path;
+    file-based delivery (CLAUDE.md injection) leaves no tool-call signature, so
+    use `cram audit --compare` to A/B that.
     """
     name = 'cram'
+    detector = {'kind': 'mcp_tool', 'match': 'get_context'}
 
     def availability(self) -> Availability:
         if shutil.which('cram') is None:

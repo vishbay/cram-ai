@@ -24,8 +24,5 @@ SYMBOLS.md is fully regenerated from source on each sync. Manual edits to it wil
 ## litellm swallows provider errors as generic exceptions
 When the model backend is misconfigured, litellm raises a generic `Exception` rather than a typed error. Log the full exception message — the provider's error detail is in the string, not a structured field.
 
-## `cram audit` only reads Claude Code transcript files
-`cram audit` scans `~/.claude/projects/*/` for `.jsonl` transcript files. It does not read Cursor, Windsurf, or Copilot sessions. Session counts will appear low on multi-tool setups.
-
-## The tray app requires macOS — import guard needed
-`cram/tray.py` uses `rumps`, which only works on macOS. Never import it unconditionally. The CLI guards this with `if sys.platform != 'darwin': sys.exit(...)` — follow the same pattern in any new tray code.
+## `cram audit` reads Claude Code, Cursor, and Codex — but Cursor carries no token usage
+`cram audit` ingests Claude Code (`~/.claude/projects/*/*.jsonl`), Cursor (agent-transcripts JSONL **and** workspace `state.vscdb`), and Codex (`~/.codex/sessions/`) — see the `parse_claude` / `parse_cursor_*` / `parse_codex` adapters in `audit_events.py`. The non-obvious trap: **Cursor transcripts carry no token-usage data**, so Cursor sessions always show as *unmeasured* (a `—`, not a number) in the measured pre-edit context share — token metrics are effectively Claude/Codex-only. Also, `--all` (multi-project) mode groups Claude projects only and skips the Cursor/Codex single-repo pass.

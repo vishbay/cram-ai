@@ -182,7 +182,41 @@ class TestRunRig:
 
 
 class TestLiveRunner:
-    def test_blocks_without_api_key(self, tmp_path, monkeypatch):
+    def test_available_requires_claude_cli(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: None)
+        av = rig.LiveRunner().available()
+        assert not av.ok and 'claude' in av.reason.lower()
+
+    def test_available_when_cli_present(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/usr/local/bin/claude')
+        assert rig.LiveRunner().available().ok
+
+    def test_run_blocks_when_cli_missing_no_api_key_needed(self, tmp_path, monkeypatch):
         monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
-        with pytest.raises(RuntimeError, match='ANTHROPIC_API_KEY'):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: None)
+        with pytest.raises(RuntimeError, match='claude'):
             rig.LiveRunner().run(rig.Task('a', 'x'), {}, str(tmp_path))
+
+    def test_run_invokes_claude_p_and_returns_transcript(self, tmp_path, monkeypatch):
+        # claude on PATH; subprocess stubbed; transcript resolver returns a path.
+        calls = {}
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/bin/claude')
+        def fake_run(argv, **kw):
+            calls['argv'] = argv
+            calls['cwd'] = kw.get('cwd')
+            return None
+        monkeypatch.setattr(rig.subprocess, 'run', fake_run)
+        monkeypatch.setattr(rig, '_newest_transcript_for',
+                            lambda wd: str(tmp_path / 't.jsonl'))
+        out = rig.LiveRunner().run(rig.Task('a', 'do the thing'), {}, str(tmp_path))
+        assert out == str(tmp_path / 't.jsonl')
+        assert calls['argv'] == ['claude', '-p', 'do the thing']
+        assert calls['cwd'] == str(tmp_path)
+
+    def test_custom_agent_cmd(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/bin/' + exe)
+        monkeypatch.setattr(rig.subprocess, 'run', lambda *a, **k: None)
+        monkeypatch.setattr(rig, '_newest_transcript_for', lambda wd: None)
+        r = rig.LiveRunner(agent_cmd=('myagent', '--headless'))
+        assert r.available().ok
+        r.run(rig.Task('a', 'x'), {}, str(tmp_path))  # no raise

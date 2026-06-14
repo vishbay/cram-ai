@@ -21,14 +21,17 @@ never disagree about what a session cost.
 
 Status: the framework, the baseline + cram adapters, and the MockRunner are
 live and tested. The Headroom and context-mode adapters are stubs that report
-themselves unavailable (those tools aren't installable from here yet), and the
-LiveRunner needs an agent + API key. `cram rig --dry-run` works today: it
-resolves the corpus × providers grid and reports availability without running.
+themselves unavailable (those tools aren't installable from here yet). The
+LiveRunner drives Claude Code headless (`claude -p`) and reuses your existing
+login — no API key needed; it just requires the `claude` CLI on PATH.
+`cram rig --dry-run` works today: it resolves the corpus × providers grid and
+reports availability without running.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import glob
 import json
 import os
 import shutil
@@ -196,18 +199,55 @@ class Runner(Protocol):
         ...
 
 
-class LiveRunner:
-    """Runs a real agent against the task. Needs an agent + API key (not here).
+def _newest_transcript_for(workdir: str) -> str | None:
+    """Newest Claude Code transcript for a working directory, or None.
 
-    Kept as a clearly-blocked seam so the wiring is obvious once a key and a
-    headless agent entrypoint exist; run() raises with the missing piece named.
+    Claude Code writes session JSONL under ~/.claude/projects/<dashed-cwd>/;
+    reuse the audit's resolver so the rig and `cram audit` agree on where
+    transcripts live, then take the most recently modified one.
     """
+    from cram.audit import _project_transcript_dir
+    td = _project_transcript_dir(workdir)
+    if not td:
+        return None
+    files = glob.glob(os.path.join(td, '*.jsonl'))
+    return max(files, key=os.path.getmtime) if files else None
+
+
+class LiveRunner:
+    """Runs a coding agent on the task via Claude Code headless mode (`claude -p`).
+
+    This targets the surface cram already benchmarks: Claude Code runs the task
+    non-interactively and writes a JSONL transcript under ~/.claude/projects/,
+    which run() locates and hands back for measurement with the same parser
+    `cram audit` uses.
+
+    No ANTHROPIC_API_KEY required — `claude -p` reuses your existing Claude Code
+    login (a raw API key is only one of several auth paths it accepts, and is
+    only needed for a login-less environment like CI). The one requirement is
+    the `claude` CLI on PATH; available() reports it. Pass a different
+    agent_cmd to drive another headless agent.
+    """
+    def __init__(self, agent_cmd: tuple[str, ...] = ('claude', '-p'),
+                 timeout: int = 900):
+        self.agent_cmd = tuple(agent_cmd)
+        self.timeout = timeout
+
+    def available(self) -> Availability:
+        exe = self.agent_cmd[0]
+        if shutil.which(exe) is None:
+            return Availability(False, f'{exe} CLI not on PATH — install Claude '
+                                       f'Code (or pass a different agent_cmd)')
+        return Availability(True)
+
     def run(self, task: Task, setup: dict, workdir: str) -> str | None:
-        if not os.environ.get('ANTHROPIC_API_KEY'):
-            raise RuntimeError(
-                'LiveRunner needs ANTHROPIC_API_KEY and a headless agent '
-                'entrypoint; none configured. Use --dry-run, or pass a MockRunner.')
-        raise NotImplementedError('LiveRunner agent invocation not implemented yet')
+        av = self.available()
+        if not av.ok:
+            raise RuntimeError(av.reason)
+        env = {**os.environ, **{k: str(v) for k, v in (setup or {}).items()}}
+        subprocess.run([*self.agent_cmd, task.prompt], cwd=workdir, env=env,
+                       capture_output=True, timeout=self.timeout)
+        return _newest_transcript_for(workdir)
 
 
 class MockRunner:
@@ -402,7 +442,11 @@ def _dry_run(corpus: list[Task], providers: list[ProviderAdapter]) -> None:
     runnable = [p.name for p in providers if p.availability().ok]
     print(f"\n  Would run {len(corpus) * len(runnable)} (task × available-provider) "
           f"cells: {', '.join(runnable) or 'none'}.")
-    print("  Live runs need ANTHROPIC_API_KEY + a headless agent (LiveRunner).\n")
+    rav = LiveRunner().available()
+    runner_note = ('the Claude Code CLI (`claude -p`, reuses your existing login '
+                   '— no API key)' if not rav.ok else
+                   '`claude -p` (Claude Code login already detected)')
+    print(f"  Live runs use {runner_note}.\n")
 
 
 def main() -> None:
@@ -432,9 +476,15 @@ def main() -> None:
         _dry_run(corpus, providers)
         return
 
+    runner = LiveRunner()
+    rav = runner.available()
+    if not rav.ok:
+        parser.error(f'{rav.reason}. Run with --dry-run to resolve the grid '
+                     f'without executing.')
+
     import tempfile
     work_root = args.work_root or tempfile.mkdtemp(prefix='cram-rig-')
-    results = run_rig(corpus, providers, LiveRunner(), CommandOracle(),
+    results = run_rig(corpus, providers, runner, CommandOracle(),
                       work_root=work_root)
     summary = summarize(results)
     if args.as_json:

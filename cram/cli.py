@@ -17,7 +17,7 @@ Commands:
   gotcha      "<trap>" [path]              Append a non-obvious trap to GOTCHAS.md
   audit       [--days N] [--all] [--json] [--report [FILE]] [--compare A B] [--session ID] [--reingest]  Audit agent sessions: where tokens go + findings; --session for a per-request waterfall; --report for shareable markdown
   benchmark   [path]                       Show token savings vs full-repo auto-indexing
-  rig         <corpus.json> [--providers baseline,cram] [--dry-run] [--json]  Controlled benchmark: tokens at fixed success across context providers
+  rig         <corpus.json> [--providers ...] [--dry-run] | --observe <optimizer> [--days N]  Verify context optimizers: controlled (tokens at fixed success) or observational A/B over real sessions
   status      [path]                       Show .ai-context/ freshness
   doctor      [path]                       Check setup: models, hooks, git, context files
   hook        install|uninstall [path]     Manage the git post-commit hook

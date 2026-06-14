@@ -220,3 +220,121 @@ class TestLiveRunner:
         r = rig.LiveRunner(agent_cmd=('myagent', '--headless'))
         assert r.available().ok
         r.run(rig.Task('a', 'x'), {}, str(tmp_path))  # no raise
+
+
+# ── claude-context adapter ───────────────────────────────────────────────────
+
+class TestClaudeContextAdapter:
+    def test_registered_as_provider(self):
+        assert rig.get_provider('claude-context').name == 'claude-context'
+
+    def test_has_detector_signature(self):
+        assert rig.ClaudeContextAdapter.detector == {
+            'kind': 'mcp_tool', 'match': 'claude-context'}
+
+    def test_unavailable_without_launcher(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: None)
+        av = rig.ClaudeContextAdapter().availability()
+        assert not av.ok and 'npx' in av.reason
+
+    def test_unavailable_without_embedding_key(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/bin/npx')
+        monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+        monkeypatch.delenv('CRAM_CLAUDE_CONTEXT_EMBED_KEY', raising=False)
+        av = rig.ClaudeContextAdapter().availability()
+        assert not av.ok and 'embedding key' in av.reason
+
+    def test_available_when_configured(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/bin/npx')
+        monkeypatch.setenv('OPENAI_API_KEY', 'sk-test')
+        assert rig.ClaudeContextAdapter().availability().ok
+
+    def test_setup_writes_project_mcp_json(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('CRAM_CLAUDE_CONTEXT_CMD', 'npx -y @zilliz/claude-context-mcp@latest')
+        rig.ClaudeContextAdapter().setup(rig.Task('a', 'x'), str(tmp_path))
+        cfg = json.loads((tmp_path / '.mcp.json').read_text())
+        srv = cfg['mcpServers']['claude-context']
+        assert srv['command'] == 'npx'
+        assert srv['args'] == ['-y', '@zilliz/claude-context-mcp@latest']
+
+
+# ── Detector + observational A/B ─────────────────────────────────────────────
+
+class TestDetector:
+    def test_mcp_tool_substring_on_full_name(self):
+        det = {'kind': 'mcp_tool', 'match': 'claude-context'}
+        assert rig._match_detector('mcp__claude-context__search_code', det)
+
+    def test_mcp_tool_leaf_match(self):
+        det = {'kind': 'mcp_tool', 'match': 'search_code'}
+        assert rig._match_detector('mcp__claude-context__search_code', det)
+
+    def test_no_match_on_unrelated_tool(self):
+        det = {'kind': 'mcp_tool', 'match': 'claude-context'}
+        assert not rig._match_detector('Read', det)
+        assert not rig._match_detector(None, det)
+
+    def test_plain_tool_kind(self):
+        assert rig._match_detector('my_search', {'kind': 'tool', 'match': 'search'})
+
+    def test_optimizer_active_scans_events(self):
+        E = rig.audit_events.Event
+        events = [E(0, 'read', tool='Read'),
+                  E(1, 'tool_call', tool='mcp__claude-context__search_code')]
+        det = {'kind': 'mcp_tool', 'match': 'claude-context'}
+        assert rig.optimizer_active(events, det)
+        assert not rig.optimizer_active([E(0, 'read', tool='Read')], det)
+
+    def test_detector_of_resolves_named_provider(self):
+        assert rig._detector_of('claude-context')['match'] == 'claude-context'
+
+    def test_detector_of_rejects_provider_without_detector(self):
+        with pytest.raises(ValueError):
+            rig._detector_of('baseline')
+
+
+class TestObserve:
+    def _proj(self, tmp_path, monkeypatch):
+        td = tmp_path / 'proj'
+        td.mkdir()
+        monkeypatch.setattr('cram.audit._project_transcript_dir',
+                            lambda r, d=str(td): d)
+        return td
+
+    def _session(self, td, name, *, with_tool, reads, cache_read):
+        msgs = []
+        for _ in range(reads):
+            msgs.append({'type': 'tool_use', 'name': 'Read', 'input': {'file_path': 'a.py'}})
+        if with_tool:
+            msgs.append({'type': 'tool_use',
+                         'name': 'mcp__claude-context__search_code', 'input': {}})
+        msgs.append({'type': 'tool_use', 'name': 'Edit', 'input': {'file_path': 'a.py'}})
+        msgs.append({'usage': {'input_tokens': 0, 'cache_read_input_tokens': cache_read,
+                               'cache_creation_input_tokens': 0, 'output_tokens': 0}})
+        with open(td / name, 'w') as f:
+            for m in msgs:
+                f.write(json.dumps(m) + '\n')
+
+    def test_splits_on_off_and_aggregates(self, tmp_path, monkeypatch):
+        td = self._proj(tmp_path, monkeypatch)
+        # optimizer-on: fewer reads; optimizer-off: more reads
+        self._session(td, 's_on.jsonl', with_tool=True, reads=1, cache_read=5_000)
+        self._session(td, 's_off.jsonl', with_tool=False, reads=6, cache_read=20_000)
+        obs = rig.observe_optimizer(str(tmp_path), 'claude-context', days=3650)
+        assert obs['on']['sessions'] == 1 and obs['off']['sessions'] == 1
+        assert obs['on']['avg_reads_before_edit'] == 1
+        assert obs['off']['avg_reads_before_edit'] == 6
+        # eff tokens = cache_read * 0.10 (anthropic)
+        assert obs['on']['avg_eff_tokens'] == pytest.approx(500.0)
+
+    def test_none_when_no_transcripts(self, tmp_path, monkeypatch):
+        self._proj(tmp_path, monkeypatch)
+        assert rig.observe_optimizer(str(tmp_path), 'claude-context') is None
+
+    def test_render_observation_runs(self, tmp_path, monkeypatch):
+        td = self._proj(tmp_path, monkeypatch)
+        self._session(td, 's_on.jsonl', with_tool=True, reads=1, cache_read=5_000)
+        self._session(td, 's_off.jsonl', with_tool=False, reads=6, cache_read=20_000)
+        obs = rig.observe_optimizer(str(tmp_path), 'claude-context', days=3650)
+        out = rig.render_observation(obs, 'claude-context')
+        assert 'Observational A/B' in out and 'claude-context' in out

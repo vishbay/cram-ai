@@ -36,6 +36,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from typing import Callable, Protocol, runtime_checkable
 
 from cram import audit_events
@@ -175,11 +176,74 @@ class ContextModeAdapter(_StubAdapter):
     install_hint = 'npm i -g context-mode and register its MCP server'
 
 
+class ClaudeContextAdapter:
+    """claude-context (github.com/zilliztech/claude-context) — semantic code
+    search MCP server. The first concrete external optimizer cram benchmarks.
+
+    Same persona + layer as cram's own context layer: it retrieves relevant code
+    before the agent reads, via an MCP server exposing index_codebase /
+    search_code / clear_index / get_indexing_status. Its headline claim — *~40%
+    token reduction at equivalent retrieval quality* — is exactly what the rig
+    measures (tokens at fixed success), which is why it's the natural first
+    external adapter.
+
+    `detector` is the transcript signature the observational A/B matches: Claude
+    Code surfaces its tools as `mcp__claude-context__search_code`, so any tool
+    name containing 'claude-context' (or the search_code leaf) flags a session
+    as having used it.
+
+    Availability is real, not a stub: claude-context needs `npx` to launch its
+    MCP server AND a configured backend (embedding key + Milvus/Zilliz vector
+    DB) — both of which are the *user's* setup, not cram's. Without them the
+    adapter reports what's missing rather than benchmarking nothing.
+    setup() writes a project-scoped `.mcp.json` so `claude -p` loads the server.
+
+    Note: claude-context must `index_codebase` before `search_code` returns
+    anything, and its benefit only shows on large codebases — see SETUP below.
+    """
+    name = 'claude-context'
+    detector = {'kind': 'mcp_tool', 'match': 'claude-context'}
+    SETUP = ('Configure claude-context per its README (embedding provider key + '
+             'a Milvus/Zilliz endpoint), ensure `npx` is on PATH, and index the '
+             'fixture once. Override the launch command with '
+             'CRAM_CLAUDE_CONTEXT_CMD.')
+
+    def __init__(self):
+        self.mcp_cmd = os.environ.get(
+            'CRAM_CLAUDE_CONTEXT_CMD',
+            'npx -y @zilliz/claude-context-mcp@latest')
+
+    def availability(self) -> Availability:
+        launcher = self.mcp_cmd.split()[0]
+        if shutil.which(launcher) is None:
+            return Availability(False, f'{launcher} not on PATH — needed to launch '
+                                       f'the claude-context MCP server. {self.SETUP}')
+        # Backend opt-in: claude-context needs an embedding key + vector DB. Gate
+        # on an explicit signal so it never falsely reports "available".
+        if not (os.environ.get('OPENAI_API_KEY')
+                or os.environ.get('CRAM_CLAUDE_CONTEXT_EMBED_KEY')):
+            return Availability(False, f'no embedding key for claude-context '
+                                       f'(set OPENAI_API_KEY or '
+                                       f'CRAM_CLAUDE_CONTEXT_EMBED_KEY). {self.SETUP}')
+        return Availability(True)
+
+    def setup(self, task: Task, workdir: str) -> dict:
+        # Project-scoped MCP config so `claude -p` in workdir loads the server.
+        cmd, *cmd_args = self.mcp_cmd.split()
+        config = {'mcpServers': {'claude-context': {'command': cmd, 'args': cmd_args}}}
+        with open(os.path.join(workdir, '.mcp.json'), 'w') as f:
+            json.dump(config, f, indent=2)
+        # Indexing is the agent's first move (index_codebase) or a manual
+        # pre-step; not driven here. Left as a documented setup nuance.
+        return {}
+
+
 _BUILTIN_PROVIDERS: dict[str, Callable[[], ProviderAdapter]] = {
-    'baseline':     BaselineAdapter,
-    'cram':         CramAdapter,
-    'headroom':     HeadroomAdapter,
-    'context-mode': ContextModeAdapter,
+    'baseline':       BaselineAdapter,
+    'cram':           CramAdapter,
+    'headroom':       HeadroomAdapter,
+    'context-mode':   ContextModeAdapter,
+    'claude-context': ClaudeContextAdapter,
 }
 
 
@@ -308,6 +372,146 @@ def effective_tokens(transcript_path: str, *, provider: str | None = None,
     wr, rd = p['cache_write_mult'], p['cache_read_mult']
     return sum(r['input'] + r['cache_write'] * wr + r['cache_read'] * rd
                for r in tl['rows'])
+
+
+# ── Detection + observational A/B ────────────────────────────────────────────
+# The verify-loop seam: decide whether an optimizer was active in a session, so
+# real transcripts can be split optimizer-on vs optimizer-off without a
+# controlled rig run. Generalizes audit_events._is_context_tool (which only
+# knows context-mode's ctx_*) to any optimizer that declares a `detector`.
+
+def _match_detector(tool_name: str | None, detector: dict) -> bool:
+    """True if a tool name matches a detector signature.
+
+    detector = {'kind': 'mcp_tool', 'match': 'claude-context'} matches Claude
+    Code's MCP tool names ('mcp__claude-context__search_code') by substring on
+    the full name or exact/prefix on the leaf after the last '__'. kind 'tool'
+    is a plain substring match on the bare name.
+    """
+    if not tool_name:
+        return False
+    match = detector.get('match', '')
+    if not match:
+        return False
+    if detector.get('kind') == 'mcp_tool':
+        leaf = tool_name.rsplit('__', 1)[-1]
+        return match in tool_name or leaf == match or leaf.startswith(match)
+    return match in tool_name
+
+
+def optimizer_active(events: list, detector: dict) -> bool:
+    """Did any tool call in this session match the optimizer's detector?"""
+    return any(_match_detector(getattr(ev, 'tool', None), detector) for ev in events)
+
+
+def _detector_of(optimizer) -> dict:
+    """Pull a detector dict off an adapter instance, class, or name."""
+    if isinstance(optimizer, dict):
+        return optimizer
+    if isinstance(optimizer, str):
+        det = getattr(get_provider(optimizer), 'detector', None)
+        if det is None:
+            raise ValueError(f'optimizer {optimizer!r} has no detector signature')
+        return det
+    det = getattr(optimizer, 'detector', None)
+    if det is None:
+        raise ValueError('optimizer has no detector signature')
+    return det
+
+
+def observe_optimizer(repo_root: str, optimizer, *, days: int = 30,
+                      provider: str | None = None) -> dict | None:
+    """Observational A/B over this repo's real transcripts: optimizer on vs off.
+
+    For a developer already using an optimizer (e.g. claude-context), this asks
+    "did your sessions that used it actually cost fewer tokens / read fewer
+    files than the ones that didn't?" — without a controlled run. It re-parses
+    the repo's Claude Code transcripts, tags each session by whether the
+    optimizer's detector fired, and compares effective tokens and
+    reads-before-edit across the two groups.
+
+    Self-contained: it does not touch derive_session's pinned output (the parity
+    suite stays green) — it derives its own metrics from the event stream.
+
+    Returns None when there are no transcripts. Note it's *observational* — the
+    groups aren't matched on task difficulty, so treat it as a signal, not proof
+    (the controlled rig is the proof).
+    """
+    import glob as _glob
+    import datetime as _dt
+    from cram.audit import _project_transcript_dir
+
+    td = _project_transcript_dir(repo_root)
+    if not td:
+        return None
+    detector = _detector_of(optimizer)
+    cutoff = _dt.datetime.now() - _dt.timedelta(days=days)
+
+    on: list[dict] = []
+    off: list[dict] = []
+    for path in _glob.glob(os.path.join(td, '*.jsonl')):
+        try:
+            if _dt.datetime.fromtimestamp(os.path.getmtime(path)) < cutoff:
+                continue
+        except OSError:
+            continue
+        parsed = audit_events.parse_claude(path)
+        if parsed is None:
+            continue
+        meta, events = parsed
+        sess = audit_events.derive_session(meta, events, big_result_bytes=20_000)
+        if sess is None:
+            continue
+        rec = {
+            'reads_before_edit': sess['reads_before_edit'],
+            'eff_tokens':        effective_tokens(path, provider=provider),
+        }
+        (on if optimizer_active(events, detector) else off).append(rec)
+
+    if not on and not off:
+        return None
+
+    def _agg(group: list[dict]) -> dict:
+        n = len(group)
+        return {
+            'sessions':                n,
+            'avg_reads_before_edit':   (sum(g['reads_before_edit'] for g in group) / n) if n else None,
+            'avg_eff_tokens':          (sum(g['eff_tokens'] for g in group) / n) if n else None,
+        }
+
+    return {'days': days, 'detector': detector,
+            'on': _agg(on), 'off': _agg(off)}
+
+
+def render_observation(obs: dict, name: str) -> str:
+    """Human-readable optimizer-on vs -off table from observe_optimizer()."""
+    on, off = obs['on'], obs['off']
+    lines = ['', f'Observational A/B — {name}  (last {obs["days"]} days)', '']
+    lines.append(f"  {'Metric':<28}{'with ' + name:>16}{'without':>14}{'Δ%':>9}")
+    lines.append(f"  {'-' * 67}")
+
+    def _row(label, key, lower_is_better=True, fmt='{:,.0f}'):
+        a, b = on[key], off[key]
+        if a is None or b is None:
+            return f"  {label:<28}{(fmt.format(a) if a is not None else '—'):>16}" \
+                   f"{(fmt.format(b) if b is not None else '—'):>14}{'—':>9}"
+        delta = (a - b) / b * 100 if b else 0.0
+        return f"  {label:<28}{fmt.format(a):>16}{fmt.format(b):>14}{delta:>+8.0f}%"
+
+    lines.append(_row('Sessions', 'sessions', fmt='{:.0f}'))
+    lines.append(_row('Avg reads before edit', 'avg_reads_before_edit'))
+    lines.append(_row('Avg effective tokens', 'avg_eff_tokens'))
+    lines.append('')
+    if not on['sessions'] or not off['sessions']:
+        lines.append(f"  ⚠ only one side has sessions — need both {name}-on and "
+                     f"-off sessions to compare.")
+    else:
+        lines.append('  Negative Δ% on tokens/reads = the optimizer looks like it '
+                     'helped. Observational, not controlled —')
+        lines.append('  groups are not matched on task difficulty. Use `cram rig '
+                     '<corpus>` for a controlled, quality-gated test.')
+    lines.append('')
+    return '\n'.join(lines)
 
 
 # ── Run loop ────────────────────────────────────────────────────────────────
@@ -449,13 +653,38 @@ def _dry_run(corpus: list[Task], providers: list[ProviderAdapter]) -> None:
     print(f"  Live runs use {runner_note}.\n")
 
 
+def _run_observe(optimizer: str, repo_root: str, days: int, as_json: bool) -> None:
+    """`cram rig --observe <optimizer>` — observational A/B over real sessions."""
+    try:
+        obs = observe_optimizer(repo_root, optimizer, days=days)
+    except ValueError as e:
+        print(f'Error: {e}', file=sys.stderr)
+        raise SystemExit(2)
+    if obs is None:
+        print(f'No transcripts found for this repo in the last {days} days.')
+        return
+    if as_json:
+        print(json.dumps(obs, indent=2))
+    else:
+        print(render_observation(obs, optimizer))
+
+
 def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(
         prog='cram rig',
-        description='Controlled benchmark: tokens at fixed success across '
-                    'context providers (baseline, cram, headroom, context-mode)')
-    parser.add_argument('corpus', help='path to a corpus JSON file')
+        description='Verify context optimizers two ways: a controlled benchmark '
+                    '(tokens at fixed success over a corpus) or --observe '
+                    '(A/B an optimizer over your real sessions).')
+    parser.add_argument('corpus', nargs='?',
+                        help='path to a corpus JSON file (controlled mode)')
+    parser.add_argument('--observe', metavar='OPTIMIZER', default=None,
+                        help='observational mode: A/B this optimizer '
+                             '(e.g. claude-context) over real transcripts')
+    parser.add_argument('--days', type=int, default=30,
+                        help='observational look-back window (default: 30)')
+    parser.add_argument('--path', default=None, metavar='REPO_PATH',
+                        help='repo root for observational mode (default: cwd)')
     parser.add_argument('--providers', default='baseline,cram',
                         help='comma-separated provider names '
                              '(default: baseline,cram)')
@@ -465,6 +694,22 @@ def main() -> None:
                         help='directory for per-run workdirs (default: a tempdir)')
     parser.add_argument('--json', action='store_true', dest='as_json')
     args = parser.parse_args()
+
+    # ── Observational mode ──────────────────────────────────────────────────
+    if args.observe:
+        from cram.utils import find_git_root
+        start = os.path.abspath(args.path) if args.path else os.getcwd()
+        try:
+            repo_root = find_git_root(start)
+        except Exception:
+            repo_root = start
+        _run_observe(args.observe, repo_root, args.days, args.as_json)
+        return
+
+    # ── Controlled mode ─────────────────────────────────────────────────────
+    if not args.corpus:
+        parser.error('a corpus path is required for controlled mode '
+                     '(or use --observe <optimizer>)')
 
     corpus = load_corpus(args.corpus)
     try:

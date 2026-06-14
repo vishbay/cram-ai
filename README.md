@@ -261,6 +261,8 @@ server once and the tool can call context tools directly.
 | `propose_decision(text, reason='', alternatives='')` | Appends a `[PENDING]` entry to DECISIONS.md for owner review. Logs to `suggestions.jsonl` for `cram ui`. | When you make an architectural choice worth recording |
 | `add_file(path, identifiers='')` | Appends a file's excerpts to CURRENT_TASK.md | When a mid-task discovery needs new context |
 | `get_health()` | Deterministic markdown: staleness score (0–10), commits since last sync, per-file token counts vs soft budgets. Safe to cache. | Before trusting loaded context on a long-running branch |
+| `run_benchmark()` | Token-savings summary for the repo — full repo vs cram context, with the per-session cost breakdown. | To quantify what the context layer is saving |
+| `get_task_history(limit=20)` | Recent `cram task` invocations as a markdown list, newest first. | Recalling what was worked on recently |
 
 ---
 
@@ -503,6 +505,7 @@ across different checkouts or machines.
 | `cram init [path] [--team]` | One-time setup — scans repo, generates context files, installs git hook |
 | `cram mcp [--repo PATH]` | Start MCP server (stdio). Wire into your tool's settings once; clients launch it automatically. |
 | `cram task "..." [--target T]` | Run context pipeline, write CURRENT_TASK.md, optionally inject into tool's auto-loaded file |
+| `cram add <file> [file ...] [--replace]` | Append (or replace) files in the current session's CURRENT_TASK.md context |
 | `cram decisions [--mine] [--days N]` | Show DECISIONS.md, or mine git history for decision-shaped commits and review interactively |
 | `cram sync [path]` | Refresh ARCHITECTURE.md + SYMBOLS.md from current repo state. If the session grace period has expired, archives the current task to `TASK_HISTORY.jsonl` and resets the task context in all target files (your instructions are untouched — only the cram-managed task section is cleared). |
 | `cram decide "..." [path]` | Append a dated architectural decision to DECISIONS.md |

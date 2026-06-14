@@ -853,6 +853,95 @@ def run_compare(path_a: str, path_b: str, days: int = 30,
     print("    means, before drawing conclusions — a few long sessions dominate.")
 
 
+def _resolve_session_path(ident: str, repo_root: str) -> str | None:
+    """Resolve a --session identifier to a transcript path.
+
+    Accepts a full path, or a session id / id-prefix matched against the
+    *.jsonl files in this repo's ~/.claude/projects/ directory (newest match
+    wins on a prefix tie).
+    """
+    if os.path.isfile(ident):
+        return ident
+    td = _project_transcript_dir(repo_root)
+    if not td:
+        return None
+    exact = os.path.join(td, ident if ident.endswith('.jsonl') else ident + '.jsonl')
+    if os.path.isfile(exact):
+        return exact
+    matches = [f for f in glob.glob(os.path.join(td, '*.jsonl'))
+               if os.path.basename(f).startswith(ident)]
+    if not matches:
+        return None
+    return max(matches, key=os.path.getmtime)
+
+
+def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
+    """Per-request waterfall for one session — `cram audit --session ID`."""
+    path = _resolve_session_path(ident, repo_root)
+    if path is None:
+        print(f"No transcript found for session {ident!r}.", file=sys.stderr)
+        if _project_transcript_dir(repo_root) is None:
+            print("  (no ~/.claude/projects/ directory for this repo)", file=sys.stderr)
+        sys.exit(1)
+
+    parsed = audit_events.parse_claude(path)
+    if parsed is None:
+        print(f"Could not parse transcript: {path}", file=sys.stderr)
+        sys.exit(1)
+    meta, events = parsed
+    tl = audit_events.derive_session_timeline(meta, events,
+                                              big_result_bytes=BIG_RESULT_BYTES)
+    if tl is None:
+        print("No per-request token usage in this session — nothing to chart.")
+        return
+
+    if as_json:
+        print(json.dumps(tl, indent=2))
+        return
+
+    sid = os.path.splitext(os.path.basename(path))[0]
+    when = datetime.datetime.fromtimestamp(tl['mtime']).strftime('%Y-%m-%d %H:%M')
+    carried_cost = tl['carried_read_tokens'] * CACHE_READ_MULT * AUDIT_BASE_PRICE
+
+    print(f"\nSession {sid[:8]} · {os.path.basename(repo_root.rstrip(os.sep))} · "
+          f"{when} · {tl['requests']} requests\n")
+    print(f"  {'Turn':>4} {'Input':>9} {'CacheR':>10} {'CacheW':>10} "
+          f"{'Output':>8} {'Context':>10} {'Δ':>9}  Note")
+    print(f"  {'-' * 74}")
+    for r in tl['rows']:
+        d = r['delta']
+        dstr = f'+{d:,}' if d > 0 else (f'{d:,}' if d < 0 else '—')
+        flag = ' ⚠' if d > 10_000 else ''
+        note = '; '.join(r['notes'][:3])
+        if len(r['notes']) > 3:
+            note += f' (+{len(r["notes"]) - 3})'
+        print(f"  {r['turn']:>4} {r['input']:>9,} {r['cache_read']:>10,} "
+              f"{r['cache_write']:>10,} {r['output']:>8,} {r['context']:>10,} "
+              f"{dstr:>9}{flag}  {note}")
+
+    print()
+    print(f"  Peak context: {tl['peak_context']:,} tok  ·  "
+          f"first request: {tl['first_context']:,} tok")
+
+    if tl['carried']:
+        print(f"\n  Carried waste (oversized results re-read every later turn):")
+        for c in tl['carried'][:5]:
+            src = audit_events.repo_rel(c['file'], repo_root) if c['file'] else '(result)'
+            print(f"    {src}: {c['tokens']:,} tok × {c['carried_turns']} later turns "
+                  f"= {c['carried_tokens']:,} carried tok")
+        print(f"    → est. carried read cost: ~${carried_cost:.4f} "
+              f"({AUDIT_PROVIDER} pricing)")
+
+    if tl['redundant']:
+        print(f"\n  Redundant re-reads (same file read >1×):")
+        for fp, n in tl['redundant'][:5]:
+            print(f"    {n}× {audit_events.repo_rel(fp, repo_root)}")
+
+    if tl['retries']:
+        print(f"\n  Failed tool calls (retry loops): {tl['retries']}")
+    print()
+
+
 def main() -> None:
     import argparse
 
@@ -878,8 +967,16 @@ def main() -> None:
                         metavar='FILE',
                         help='Emit a shareable markdown report '
                              '(to FILE, or stdout if omitted)')
+    parser.add_argument('--session', default=None, metavar='ID',
+                        help='Per-request waterfall for one session '
+                             '(transcript path or session-id prefix)')
     parser.add_argument('--path', default=None, metavar='REPO_PATH')
     args = parser.parse_args()
+
+    if args.session:
+        root = _resolve_root(args.path) if args.path else _resolve_root(os.getcwd())
+        run_session(args.session, root, as_json=args.as_json)
+        return
 
     if args.compare:
         run_compare(args.compare[0], args.compare[1],

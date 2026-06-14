@@ -630,3 +630,133 @@ def derive_session(meta: SessionMeta, events: list[Event],
     if meta.source != 'claude':
         sess['source'] = meta.source
     return sess
+
+
+def derive_session_timeline(meta: SessionMeta, events: list[Event],
+                            repo_root: str | None = None, *,
+                            big_result_bytes: int) -> dict | None:
+    """Per-request waterfall for one session — the drill-down behind --session.
+
+    Where :func:`derive_session` collapses a session to aggregate metrics, this
+    keeps the timeline: one row per request_usage with its token classes, the
+    context delta vs the previous request, and the tool activity that caused the
+    jump (reads/edits issued, oversized results returned). It then attributes the
+    session's wasted tokens to concrete causes:
+
+      * carried   — oversized tool results re-read by every later request. Same
+                    math as carried_read_tokens, but itemized and named (the
+                    result is attributed to the most recent read's file_path).
+      * redundant — files read more than once.
+      * retries   — failed tool calls (error tool_results).
+
+    Context math (input + cache_read + cache_write per request, size//4 tokens
+    for results) mirrors derive_session exactly so the two never disagree.
+    Returns None when the session has no request_usage rows (nothing to chart).
+    """
+    rows: list[dict] = []
+    carried: list[dict] = []
+    read_counts: dict[str, int] = {}
+    retries = 0
+
+    pending: list[str] = []   # tool activity since the previous request row
+    last_read_file: str | None = None
+    prev_ctx = 0
+
+    for ev in events:
+        kind = ev.kind
+
+        if kind == 'read':
+            files = [ev.file_path] if ev.file_path else (ev.extras or {}).get('files') or []
+            fp = files[0] if files else None
+            if fp:
+                read_counts[fp] = read_counts.get(fp, 0) + 1
+                last_read_file = fp
+            pending.append(f'Read {os.path.basename(fp)}' if fp else 'Read')
+            continue
+
+        if kind == 'edit':
+            fp = ev.file_path
+            pending.append(f'Edit {os.path.basename(fp)}' if fp else 'Edit')
+            continue
+
+        if kind == 'tool_call':
+            if ev.tool:
+                pending.append(ev.tool)
+            continue
+
+        if kind == 'tool_result':
+            if ev.is_error:
+                retries += 1
+                pending.append('✗ tool error')
+            size = ev.bytes or 0
+            if size > big_result_bytes:
+                tok = size // 4
+                # The big result lands in the context of the NEXT request and
+                # rides on every request after it. carried_turns is filled in
+                # once we know the total request count.
+                carried.append({
+                    'file': last_read_file,
+                    'tokens': tok,
+                    'at_request': len(rows),
+                })
+                src = os.path.basename(last_read_file) if last_read_file else 'result'
+                pending.append(f'⚠ {src} → {tok:,} tok result ({size // 1000} KB)')
+            continue
+
+        if kind == 'request_usage':
+            ctx = ev.tok_input + ev.tok_cache_read + ev.tok_cache_write
+            if ctx == 0 and ev.tok_output == 0:
+                continue   # empty usage record — nothing to chart
+            usage = (ev.tok_input, ev.tok_cache_read, ev.tok_cache_write, ev.tok_output)
+            # Claude Code re-logs one request's usage across several transcript
+            # lines; collapse consecutive identical tuples into one logical turn
+            # and fold their tool activity into that row.
+            if rows and rows[-1]['_usage'] == usage:
+                rows[-1]['notes'].extend(pending)
+                pending = []
+                continue
+            rows.append({
+                'turn':        len(rows) + 1,
+                '_usage':      usage,
+                'input':       ev.tok_input,
+                'cache_read':  ev.tok_cache_read,
+                'cache_write': ev.tok_cache_write,
+                'output':      ev.tok_output,
+                'context':     ctx,
+                'delta':       ctx - prev_ctx if rows else 0,
+                'notes':       pending,
+            })
+            prev_ctx = ctx
+            pending = []
+
+    if not rows:
+        return None
+
+    requests = len(rows)
+    for r in rows:
+        del r['_usage']
+    for c in carried:
+        c['carried_turns']  = max(requests - c['at_request'], 0)
+        c['carried_tokens'] = c['tokens'] * c['carried_turns']
+    carried.sort(key=lambda c: -c['carried_tokens'])
+
+    redundant = sorted(
+        ((fp, n) for fp, n in read_counts.items() if n > 1),
+        key=lambda t: (-t[1], t[0]),
+    )
+
+    contexts = [r['context'] for r in rows]
+    return {
+        'adapter':       meta.adapter,
+        'source':        meta.source,
+        'path':          meta.path,
+        'mtime':         meta.mtime,
+        'requests':      requests,
+        'rows':          rows,
+        'peak_context':  max(contexts),
+        'first_context': contexts[0],
+        'carried':       carried,
+        'carried_read_tokens': sum(c['carried_tokens'] for c in carried),
+        'redundant':     redundant,
+        'retries':       retries,
+    }

@@ -15,7 +15,7 @@ Commands:
   decide      "<decision>" [path]          Append an architectural decision to DECISIONS.md
   decisions   [--mine] [--days N] [path]   Show decisions; --mine extracts drafts from git log
   gotcha      "<trap>" [path]              Append a non-obvious trap to GOTCHAS.md
-  audit       [--days N] [--all] [--json] [--report [FILE]] [--compare A B] [--reingest]  Audit agent sessions: where tokens go + findings; --report for shareable markdown
+  audit       [--days N] [--all] [--json] [--report [FILE]] [--compare A B] [--session ID] [--reingest]  Audit agent sessions: where tokens go + findings; --session for a per-request waterfall; --report for shareable markdown
   benchmark   [path]                       Show token savings vs full-repo auto-indexing
   status      [path]                       Show .ai-context/ freshness
   doctor      [path]                       Check setup: models, hooks, git, context files

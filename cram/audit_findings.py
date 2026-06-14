@@ -4,11 +4,15 @@ Each finding pairs evidence (numbers already in the audit data, never an LLM
 judgment) with a concrete remediation lever. Thresholds are conservative on
 purpose: a finding that fires on healthy repos gets the whole report ignored.
 
-A finding dict: {'id', 'severity' ('warn' for now), 'evidence', 'fix'}.
-Order is fixed (most actionable first) so output is stable run-to-run.
+A finding dict: {'id', 'severity' ('warn' for now), 'evidence', 'fix'} plus the
+additive {'waste_class', 'recommended'} attached from cram.recommend — the typed
+class and the optimizer cram recommends for it. Order is fixed (most actionable
+first) so output is stable run-to-run.
 """
 
 from __future__ import annotations
+
+from cram.recommend import attach_recommendations
 
 # Thresholds (module-level so they're visible and testable; deliberately not
 # env-tunable until someone needs it — fewer knobs, more comparable reports).
@@ -105,4 +109,4 @@ def derive_findings(data: dict) -> list[dict]:
                    'results, or tune compaction before the window fills.',
         })
 
-    return findings
+    return attach_recommendations(findings)

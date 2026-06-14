@@ -306,6 +306,12 @@ When you call `get_context("task description")`, cram runs a four-stage pipeline
 > itself at the start of every session. With cram the context arrives in one call and includes
 > knowledge — decisions, gotchas — that the agent can't discover by searching.
 
+> **Switch tasks mid-session — no restart.** `get_context("next task")` re-runs the pipeline
+> inline and loads focused context for the new task. You do **not** need to open the TUI, run
+> `cram task`, or start a fresh session per task — keep one session open and call `get_context`
+> each time the task changes. (The TUI/`cram task` path exists for the file-based delivery flow
+> and to populate the startup banner; it is not required when using MCP.)
+
 ---
 
 ## MCP delivery
@@ -338,7 +344,7 @@ server once and the tool can call context tools directly.
 
 | Tool | What it returns | When to call it |
 |---|---|---|
-| `get_context(task='')` | Runs symbol lookup → file selection → excerpt extraction. No-arg: returns last CURRENT_TASK.md without re-running the LLM. Prepends a staleness warning when context is stale or critical. | First thing every session |
+| `get_context(task='')` | Runs symbol lookup → file selection → excerpt extraction. No-arg: returns last CURRENT_TASK.md without re-running the LLM. Prepends a staleness warning when context is stale or critical. | First thing every session — **and again whenever the task changes mid-session (no restart needed)** |
 | `get_architecture()` | ARCHITECTURE.md — repo structure, tech stack, key files | Orientation in an unfamiliar area |
 | `get_symbols(query='')` | SYMBOLS.md — source files mapped to public identifiers, optionally filtered | Finding where a function is defined |
 | `get_decisions()` | DECISIONS.md — architectural commitments | Before making a design choice |
@@ -495,6 +501,8 @@ Each tab refreshes its data when you switch to it. Auto-refreshes every 30 secon
 ```bash
 # Before a session — MCP path (Claude Code / Cursor / Windsurf / Zed)
 # Nothing to run. The agent calls get_context() itself.
+# To switch tasks mid-session, just ask the agent to load the next task —
+# it calls get_context("next task") inline. No new session, no TUI.
 
 # Before a session — file-based delivery (Copilot / no-MCP tools)
 cram task "fix the rate limiter" --target copilot

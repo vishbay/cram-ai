@@ -2,13 +2,13 @@
   "tasks": [
     {
       "id": "fix-failing-test",
-      "prompt": "A unit test in this repo is failing. Find the bug in the source and fix it so the test passes. Do not edit the test.",
+      "prompt": "Run the tests in this directory with `pytest -q`. One test fails because of a bug in stats.py (the even-length case of median is wrong). Fix stats.py so all tests pass. Do not edit the tests.",
       "fixture": "fixtures/fix-failing-test",
       "check": ["python", "-m", "pytest", "-q"]
     },
     {
       "id": "add-cli-flag",
-      "prompt": "Add a --verbose flag to the CLI that prints debug output, with a test covering it.",
+      "prompt": "app.py is a CLI with no --verbose flag. test_app.py (the spec) expects that passing --verbose also prints a line containing 'debug', while the result line is always printed. Implement the --verbose flag in app.py so `pytest -q` passes. Do not edit the tests.",
       "fixture": "fixtures/add-cli-flag",
       "check": ["python", "-m", "pytest", "-q"]
     }

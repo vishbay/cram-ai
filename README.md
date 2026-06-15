@@ -4,18 +4,28 @@
 [![Python](https://img.shields.io/pypi/pyversions/cram-ai?color=%2300f5d4&style=flat-square)](https://pypi.org/project/cram-ai/)
 [![License](https://img.shields.io/github/license/vishbay/cram-ai?color=%23f72585&style=flat-square)](LICENSE)
 
-cram audits your AI coding-agent sessions — **Claude Code, Cursor, Codex** — straight from
-the transcripts already on your disk, and shows where the tokens went: how much spend lands
-before the first edit, which files agents re-read session after session, oversized tool
-results carried turn after turn, retry loops. Every number is labeled **measured** or
-**estimated**, and deterministic findings pair evidence with a concrete fix. No setup, no
-instrumentation, and the audit is fully local — nothing leaves your machine.
+**The profiler and referee for AI coding-agent tokens.** cram shows you where your agent
+spend goes, gives you evidence-backed fixes, and verifies whether any optimization — its own
+or anyone else's — actually worked.
 
-One of those fixes ships with cram: a **context layer** that pre-loads focused project, task,
-symbol, decision, and gotcha context so your tool arrives oriented instead of re-discovering
-the codebase each session. Apply a fix — cram's or any other — then re-audit to verify it
-actually helped. (Unlike the audit, the context layer calls your configured model provider:
-`cram init` and `get_context` send code excerpts to it to build that context.)
+**The profiler.** cram audits your AI coding-agent sessions — **Claude Code, Cursor, Codex** —
+straight from the transcripts already on your disk, and shows where the tokens went: how much
+spend lands before the first edit, which files agents re-read session after session, oversized
+tool results carried turn after turn, retry loops. Like a code profiler, it doesn't magically
+make sessions cheaper — it shows you the hot spots so you can. Every number is labeled
+**measured** or **estimated**, and deterministic findings pair evidence with a concrete fix.
+No setup, no instrumentation, and the audit is fully local — nothing leaves your machine.
+
+**The referee.** Don't take a token-saver's word for it. `cram rig` measures whether an
+optimization actually reduces tokens *at fixed task success* — controlled, or as an
+observational A/B over your real sessions — so you can prove a fix helped (or didn't) before
+trusting it. Verify cram's own remediations, or anyone else's.
+
+One fix ships with cram: a **context layer** that pre-loads focused project, task, symbol,
+decision, and gotcha context so your tool arrives oriented instead of re-discovering the
+codebase each session. Apply a fix — cram's or any other — then re-audit to verify it actually
+helped. (Unlike the audit, the context layer calls your configured model provider: `cram init`
+and `get_context` send code excerpts to it to build that context.)
 
 The context layer works with **Claude Code, Cursor, Windsurf, Zed, Codex, GitHub Copilot,
 Gemini CLI**, and any tool that reads a file on startup. Custom tool targets are supported

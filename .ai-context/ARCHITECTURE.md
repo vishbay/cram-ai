@@ -11,10 +11,10 @@ Core Python package containing main functionality:
 - `context_dir.py` - Context directory resolution (`.ai-context/` preferred, `.cram-ai-context/` legacy fallback)
 - `find_context.py` - Scans and extracts relevant context from codebases; populates CURRENT_TASK.md and archives to TASK_HISTORY.jsonl
 - `init.py` - Initializes project configuration and CLAUDE.md files; triggers hook installation
-- `sync_context.py` - Synchronizes context with external systems and backends; error-resilient ARCHITECTURE.md updates
+- `sync_context.py` - Synchronizes context with external systems and backends; error-resilient ARCHITECTURE.md updates with structure-hash deduplication
 - `status.py` - Shows .ai-context/ file freshness and repo sync state
 - `hooks.py` - Git post-commit and commit-msg hook installer for automated sync and decision recording
-- `mcp_server.py` - MCP server for Claude Code integration with task slot namespacing, usage logging, and decision proposals
+- `mcp_server.py` - MCP server for Claude Code integration with task slot namespacing and decision proposals
 - `session.py` - Session state management: task archiving, slot tracking, grace period handling
 - `targets.py` - Target-specific output generation with byte-cap command protection rules
 - `symbols.py` - Public identifier extraction for SYMBOLS.md
@@ -85,7 +85,7 @@ Test suite for the package functionality
 - **Optimization recommendations**: Typed waste-class detectors with recommended fixes
 - **Agentic testing framework (cram rig)**: Verify optimizer correctness via task corpus, fixture execution, and oracle validation
 - **Interactive TUI dashboard** (5 tabs): Decisions, Sessions, Health, History, Actions; auto-refresh every 30s
-- Usage logging (task, tokens, timestamp) in JSONL format
+- **Structure-hash deduplication**: Skip ARCHITECTURE.md LLM regeneration when repo structure is unchanged
 - Task history archiving (per-session task invocations with timestamps)
 - Multi-provider LLM support (Claude CLI / Ollama / OpenAI-compat / Gemini) with configurable timeouts
 
@@ -113,19 +113,18 @@ CLI commands dispatched through unified `cram` entry point:
 
 `.ai-context/` (canonical) is created at repo root by `cram init`.
 
-| File | Purpose | Managed by |
-|------|---------|-----------|
-| `ARCHITECTURE.md` | Repo structure, tech stack, key files | `cram sync` |
-| `SYMBOLS.md` | Public identifiers per source file | `cram init` / `cram sync` |
-| `DECISIONS.md` | Architectural invariants and decisions | Manual + `cram decide` |
-| `GOTCHAS.md` | Non-obvious traps and workarounds | Manual + `cram gotcha` |
-| `CURRENT_TASK.md` | Active task context (per-session) | `cram task` |
-| `config.toml` | Output protection, task defaults, custom targets | Manual |
-| `tasks/` | Per-task slot files for concurrent agents | MCP server |
-| `TASK_HISTORY.jsonl` | Per-session task archive | `cram task` / MCP server |
-| `usage.jsonl` | Usage log (task, tokens, timestamp) | MCP server |
-| `suggestions.jsonl` | Proposed decisions from agents | MCP server |
-| `.gitignore` | Excludes CURRENT_TASK.md (per-developer) | `cram init` |
+| File | Purpose | Tracked |
+|------|---------|---------|
+| `ARCHITECTURE.md` | Repo structure, tech stack, key files | Yes |
+| `SYMBOLS.md` | Public identifiers per source file | Yes |
+| `DECISIONS.md` | Architectural invariants and decisions | Yes |
+| `GOTCHAS.md` | Non-obvious traps and workarounds | Yes |
+| `CURRENT_TASK.md` | Active task context (per-session) | No |
+| `config.toml` | Output protection, task defaults, custom targets | Yes |
+| `tasks/` | Per-task slot files for concurrent agents | No |
+| `TASK_HISTORY.jsonl` | Per-session task archive | Yes |
+| `usage.jsonl` | Usage log (task, tokens, timestamp) | No |
+| `suggestions.jsonl` | Proposed decisions from agents | No |
 
 ## Concurrency Model
 
@@ -152,3 +151,5 @@ Optional extras:
 - `cram[tui]` - Textual dashboard (depends on textual>=0.80)
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
+
+<!-- cram:structure-hash 4d7a8803632547187c9c0bc519eb69e8353f9a816736ef051065e175f9c724b8 -->

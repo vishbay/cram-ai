@@ -1,6 +1,8 @@
 """Post-session context update: refreshes ARCHITECTURE.md after a commit."""
 
+import hashlib
 import os
+import re
 import subprocess
 import sys
 import time
@@ -37,6 +39,27 @@ def get_git_diff() -> str:
             ['git', 'show', '--stat', '--unified=2', 'HEAD'],
             stderr=subprocess.DEVNULL,
         ).decode()
+
+
+# Fingerprint of the repo structure ARCHITECTURE.md was last generated from.
+# Stored inside the doc so it travels with the committed file — after a pull,
+# a teammate's structure matches and the LLM rewrite is skipped (no churn).
+_STRUCT_HASH_RE = re.compile(r'<!--\s*cram:structure-hash\s+([0-9a-f]{64})\s*-->')
+
+
+def _structure_hash(structure: str) -> str:
+    return hashlib.sha256(structure.encode()).hexdigest()
+
+
+def _stored_structure_hash(content: str) -> str | None:
+    m = _STRUCT_HASH_RE.search(content)
+    return m.group(1) if m else None
+
+
+def _with_structure_hash(content: str, struct_hash: str) -> str:
+    """Append (or replace) the structure-hash marker at the end of the doc."""
+    body = _STRUCT_HASH_RE.sub('', content).rstrip()
+    return f"{body}\n\n<!-- cram:structure-hash {struct_hash} -->\n"
 
 
 def update_architecture_md(structure: str, diff: str, current: str) -> str:
@@ -134,24 +157,31 @@ def sync(root: str = '.') -> None:
     print("Scanning repo structure ...")
     structure = scan_structure(root)
 
-    from cram.utils import get_model_recommendations
-    ctx_model, _ = get_model_recommendations()
-    print(f"Updating ARCHITECTURE.md via {ctx_model} ...")
-    try:
-        updated = update_architecture_md(structure, diff, current)
-    except RuntimeError as e:
-        print(f"Error: could not update ARCHITECTURE.md — {e}", file=sys.stderr)
-        print(
-            "Existing ARCHITECTURE.md left unchanged. Symbol index will still refresh below.",
-            file=sys.stderr,
-        )
+    struct_hash = _structure_hash(structure)
+    if current and _stored_structure_hash(current) == struct_hash:
+        # Repo structure is identical to the last regen — rewriting would only
+        # produce non-deterministic prose churn. Skip the LLM call entirely.
+        print("Repo structure unchanged — skipping ARCHITECTURE.md regen.")
         updated = None
+    else:
+        from cram.utils import get_model_recommendations
+        ctx_model, _ = get_model_recommendations()
+        print(f"Updating ARCHITECTURE.md via {ctx_model} ...")
+        try:
+            updated = _with_structure_hash(
+                update_architecture_md(structure, diff, current), struct_hash
+            )
+        except RuntimeError as e:
+            print(f"Error: could not update ARCHITECTURE.md — {e}", file=sys.stderr)
+            print(
+                "Existing ARCHITECTURE.md left unchanged. Symbol index will still refresh below.",
+                file=sys.stderr,
+            )
+            updated = None
 
     if updated:
         with open(arch_path, 'w') as f:
             f.write(updated)
-
-    if updated:
         print(f"Done. {CONTEXT_DIR}/ARCHITECTURE.md updated.")
 
     print("Refreshing symbol index ...")

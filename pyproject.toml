@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cram-ai"
 version = "0.5.1"
-description = "Audit AI coding-agent sessions from real transcripts — see where tokens go (pre-edit context share, context bloat, retry loops) and get evidence-backed fixes"
+description = "The profiler and referee for AI coding-agent tokens — audit where agent spend goes from real transcripts, get evidence-backed fixes, and verify any optimization actually worked"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Vish Bayavarapu", email = "vishbay19@gmail.com" }]

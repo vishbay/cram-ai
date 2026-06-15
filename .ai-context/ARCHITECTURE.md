@@ -1,7 +1,7 @@
 # Architecture
 
 ## Overview
-cram-ai is a utility for discovering, initializing, and synchronizing context information for AI coding assistants. It scans codebases to extract relevant context, manages project configuration, and maintains Claude-specific settings for zero-key integration workflows.
+cram-ai is a profiler and referee for AI coding-agent tokens. It audits agent sessions from real transcripts to show where tokens go (pre-edit context share, context bloat, retry loops), provides evidence-backed fixes, and verifies whether any optimization actually reduces token use at fixed task success. It also initializes project configuration, maintains Claude-specific settings, and provides a context layer for zero-key integration workflows.
 
 ## Directory Structure
 
@@ -34,19 +34,9 @@ Core Python package containing main functionality:
 - `utils.py` - Shared utilities: model discovery, LLM routing (Claude CLI / Ollama / OpenAI-compat / Gemini), Ollama timeout handling
 - `__init__.py` - Package initialization
 
-### `.claude/`
-Claude-specific configuration and settings:
-- `settings.local.json` - Local settings for Claude integration and behavior
-- `hooks/` - SessionStart hook for auto-injecting context
-
-### `examples/`
-Example corpora and test fixtures for cram rig:
-- `rig/` - cram rig example framework
-  - `corpus.example.json` - Example task corpus
-  - `fixtures/` - Pre-made testing fixtures (with TASK.md, code, tests)
-
-### `templates/`
-Template files for project initialization
+### `templates/` and `examples/`
+- `templates/` - Template files for project initialization
+- `examples/rig/` - Example task corpus and pre-made fixtures for cram rig testing
 
 ### `tests/`
 Test suite for the package functionality
@@ -58,9 +48,9 @@ Test suite for the package functionality
 | `pyproject.toml` | Python package metadata and build configuration |
 | `setup.py` | setuptools shim for pip compatibility |
 | `requirements.txt` | Python dependencies |
+| `CASE_STUDY_RUNBOOK.md` | Reproducible runbook for GitHub-issues case study; demonstrates profiler (where tokens go) and referee (whether fixes work) |
 | `PROJECT_CONTEXT.md` | Project goals and context documentation |
 | `PLAN_CARRIED_OUTPUT.md` | Carried-output optimization loop design (advisory-tightening phase) |
-| `.gitignore` | Git exclusion rules |
 
 ## Tech Stack
 
@@ -73,6 +63,8 @@ Test suite for the package functionality
 
 ## Primary Features
 
+- **Profiler**: Audit AI agent sessions from transcripts; measure pre-edit context share, context bloat, retry loops, and oversized tool results
+- **Referee**: Verify whether any optimization (cram's or third-party) reduces tokens at fixed task success; controlled or observational A/B over real sessions
 - Context extraction from arbitrary codebases with identifier-focused excerpts
 - Project initialization with templated configuration and ARCHITECTURE.md generation
 - Context synchronization across backends with automated git hooks
@@ -82,9 +74,8 @@ Test suite for the package functionality
 - Task slot namespacing for concurrent agent invocations
 - **Architectural decision tracking**: Record and mine decisions from git history
 - **Gotcha documentation**: Maintain repository-specific non-obvious traps and workarounds
-- **Orientation tax audit**: Measure reads-vs-edits efficiency from transcripts; per-session context-mode analysis
 - **Optimization recommendations**: Typed waste-class detectors with recommended fixes
-- **Carried-output loop** (Option A, advisory-tightening): Detect oversized tool results, auto-tighten `[output]` caps in config, verify with `cram rig --observe`; active runtime truncation (Option B) deferred pending evidence caps are ignored
+- **Carried-output loop** (Option A, advisory-tightening): Detect oversized tool results, auto-tighten `[output]` caps in config, verify with `cram rig --observe`
 - **Agentic testing framework (cram rig)**: Verify optimizer correctness via task corpus, fixture execution, and oracle validation
 - **Interactive TUI dashboard** (5 tabs): Decisions, Sessions, Health, History, Actions; auto-refresh every 30s
 - **Structure-hash deduplication**: Skip ARCHITECTURE.md LLM regeneration when repo structure is unchanged
@@ -92,10 +83,6 @@ Test suite for the package functionality
 - Multi-provider LLM support (Claude CLI / Ollama / OpenAI-compat / Gemini) with configurable timeouts
 
 ## Entry Points
-
-### Global Flags
-- `-V, --version` - Print the cram-ai version and exit
-- `-h, --help` - Print usage information and exit
 
 ### Commands
 
@@ -136,20 +123,7 @@ CLI commands dispatched through unified `cram` entry point:
 
 ## Concurrency Model
 
-cram is designed for **one developer, one repo checkout**. Task slot namespacing (`.ai-context/tasks/`) protects against concurrent MCP calls within a single server process, allowing multiple agents to invoke `get_context()` in parallel without collision. This is not a collaboration feature—each developer maintains independent context files in their local checkout.
-
-## Staleness Detection
-
-The post-commit hook writes ARCHITECTURE.md to disk but does not commit it. The health check detects this correctly: if the file has uncommitted changes (rewritten by `cram sync` after the last commit), staleness score is reported as 0—not stale.
-
-## Git Hooks
-
-cram installs two hooks to automate context synchronization:
-
-- **post-commit**: Runs `cram sync` to update ARCHITECTURE.md and SYMBOLS.md on every commit
-- **commit-msg**: Processes decision-language prompts in commit messages; enables recording architectural decisions inline during commits
-
-Install via `cram init` or `cram hook install`.
+cram is designed for **one developer, one repo checkout**. Task slot namespacing (`.ai-context/tasks/`) protects against concurrent MCP calls within a single server process, allowing multiple agents to invoke `get_context()` in parallel without collision.
 
 ## Dependencies
 
@@ -160,4 +134,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 96e50beff9941ac620d1700bb89bf3bc003f8c8ae454bdddf08ae96ae1a34a40 -->
+<!-- cram:structure-hash d93da3112f35050ee49235586dc3dd807764499ad77043dbc01d347df16bf2f9 -->

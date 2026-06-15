@@ -1,7 +1,0 @@
-{"ts": "2026-06-09T22:20:31.159957+00:00", "task": "", "tokens": 1340, "source": "reload"}
-{"ts": "2026-06-09T22:22:10.673284+00:00", "task": "", "tokens": 1340, "source": "reload"}
-{"ts": "2026-06-09T22:26:12.904495+00:00", "task": "live-test MCP tools and check next pending tasks", "tokens": 1522, "source": "generate"}
-{"ts": "2026-06-09T22:30:11.781912+00:00", "task": "Implement better layout for cram-ai tui and options to perform cram cli options from tui", "tokens": 1339, "source": "generate"}
-{"ts": "2026-06-09T23:34:04.073018+00:00", "task": "task history tab empty, cram task command output without quotes", "tokens": 1406, "source": "generate"}
-{"ts": "2026-06-09T23:59:43.343731+00:00", "task": "", "tokens": 747, "source": "reload"}
-{"ts": "2026-06-10T00:14:19.322352+00:00", "task": "tui history tab: new task not showing up, clean up session ended comment task, add loading indicator for check results", "tokens": 1264, "source": "generate"}

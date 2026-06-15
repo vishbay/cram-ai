@@ -32,8 +32,8 @@
 - **Date:** 2026-03-01
 - **Status:** Accepted
 - **Decision:** Shell commands run via cram context are byte-capped (`| head -c 6000`), injected as a rule into CURRENT_TASK.md.
-- **Reason:** Unbounded output (a big `cat`, an unlimited `git log`) floods the window with thousands of tokens per call; the injected cap needs no per-session config.
-- **Alternatives considered:** Trust agents to self-limit; truncate at the MCP layer; token-counting middleware.
+- **Reason:** Unbounded output (a big `cat`, an unlimited `git log`) floods the window thousands of tokens at a time; the injected cap needs no per-session config.
+- **Alternatives considered:** Self-limiting agents; MCP-layer truncation; token-counting middleware.
 
 ## [DECISION-006] Git-commit-count staleness score over mtime
 - **Date:** 2026-03-15
@@ -67,5 +67,11 @@
 - **Date:** 2026-06-14
 - **Status:** Accepted
 - **Decision:** Keep `.ai-context/ARCHITECTURE.md` tracked and committed — do NOT gitignore it. To stop the per-commit churn, `cram sync` embeds a sha256 fingerprint of the repo structure in the file and skips the LLM rewrite when the structure is unchanged (#24).
-- **Reason:** Gitignoring would remove it from the repo for everyone and degrade context for teammates and fresh agent sessions (`get_context` reads it on every call), undercutting cram's core value prop — the context layer is meant to be shared. The churn was non-deterministic Haiku regen on every commit, not a reason to stop sharing the file; fixing the regen addresses the actual problem. Trade-off: the skip is keyed on repo file-tree structure only, so pure content changes inside existing files won't trigger an ARCHITECTURE refresh until the file set changes (or `cram sync` is run after a structural change).
-- **Alternatives considered:** Gitignore ARCHITECTURE.md (rejected — un-shares it); make regen deterministic via a fixed model/seed (heavier, still re-runs the LLM needlessly); accept the churn and discard it manually each commit (ongoing friction).
+- **Reason:** Gitignoring removes it for everyone and degrades context for teammates and fresh sessions (`get_context` reads it every call) — the context layer is meant to be shared. The churn was non-deterministic Haiku regen, not a reason to stop sharing; fixing the regen is the real fix. Trade-off: the skip is keyed on file-tree structure only, so pure content changes won't refresh ARCHITECTURE until the file set changes (DECISION-006 staleness was aligned to this in #33).
+- **Alternatives considered:** Gitignore it (un-shares); deterministic regen via fixed model/seed (heavier, still re-runs the LLM); accept churn and discard manually (ongoing friction).
+
+## [DECISION-011] Carried-output loop is advisory-tightening only; active truncation deferred
+- **Date:** 2026-06-15
+- **Status:** Accepted
+- **Decision:** Carried-output loop is **advisory-tightening only** (Option A: detect → auto-tighten `[output]` caps → verify with `cram rig`). **Active runtime truncation** (Option B, a PostToolUse hook rewriting tool output) is **deferred** until audits show advisory caps are ignored. Rationale, alternatives, and B's preconditions live in `PLAN_CARRIED_OUTPUT.md`.
+- **Reason:** B would put cram in another tool's silent-failure path — dropping needed output corrupts a session invisibly, against cram's measured/advisory ethos. A is reversible and yields the evidence to judge if B is ever worth its risk.

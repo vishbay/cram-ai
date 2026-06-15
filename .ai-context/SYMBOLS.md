@@ -39,6 +39,7 @@ tests/test_audit_measured.py: TestPerSessionMeasured, TestAggregateMeasured, Tes
 tests/test_audit_report.py: TestRenderReport, TestRunReport
 tests/test_audit_store.py: TestResolveDbPath, TestRoundtrip, TestLedger, TestInvalidation, TestCursorDbSessions, TestIncrementalCollect, TestParseFailureSurfacing, TestContextModeDetection, TestContextModeSegment, TestIngestProgress
 tests/test_audit_timeline.py: TestTimelineRows, TestConsecutiveUsageCollapse, TestWasteAttribution, TestRunSessionCLI
+tests/test_cli.py: TestVersionFlag, TestUsage
 tests/test_context_dir.py: test_prefers_canonical_context_dir, test_falls_back_to_legacy_context_dir, test_context_path_uses_resolved_dir
 tests/test_cost_model.py: test_orientation_caps_at_repo_tokens, test_orientation_zero_files, test_daily_saving_never_negative, test_nocram_scales_linearly_with_orient_files, test_daily_costs_returns_expected_keys, test_import_works, TestBudgetStatus, TestProviderPricing, TestResolveProvider, TestEnterpriseProviderPricing
 tests/test_decisions.py: repo, TestFilterCommits, TestParseModelOutput, TestAppendWithReason, TestShowDecisions, TestMineDecisions

@@ -62,3 +62,10 @@
 - **Decision:** `cram ui` requires `pip install cram-ai[tui]` — Textual is not a default dependency.
 - **Reason:** Textual adds ~15MB to the install. Most users will never use the TUI (they use the MCP path). Making it optional keeps the default install lightweight.
 - **Alternatives considered:** Always install Textual; use curses directly; no TUI (CLI-only).
+
+## [DECISION-010] ARCHITECTURE.md stays a shared, committed artifact
+- **Date:** 2026-06-14
+- **Status:** Accepted
+- **Decision:** Keep `.ai-context/ARCHITECTURE.md` tracked and committed — do NOT gitignore it. To stop the per-commit churn, `cram sync` embeds a sha256 fingerprint of the repo structure in the file and skips the LLM rewrite when the structure is unchanged (#24).
+- **Reason:** Gitignoring would remove it from the repo for everyone and degrade context for teammates and fresh agent sessions (`get_context` reads it on every call), undercutting cram's core value prop — the context layer is meant to be shared. The churn was non-deterministic Haiku regen on every commit, not a reason to stop sharing the file; fixing the regen addresses the actual problem. Trade-off: the skip is keyed on repo file-tree structure only, so pure content changes inside existing files won't trigger an ARCHITECTURE refresh until the file set changes (or `cram sync` is run after a structural change).
+- **Alternatives considered:** Gitignore ARCHITECTURE.md (rejected — un-shares it); make regen deterministic via a fixed model/seed (heavier, still re-runs the LLM needlessly); accept the churn and discard it manually each commit (ongoing friction).

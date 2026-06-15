@@ -50,7 +50,7 @@ tests/test_mcp_server.py: repo, TestGetArchitectureDeterminism, TestGetDecisions
 tests/test_recommend.py: TestRegistryIntegrity, TestLookups, TestDetectors, TestAttach, TestDeriveFindingsCarriesRecommendations
 tests/test_rig.py: TestCorpus, TestProviders, TestCommandOracle, TestEffectiveTokens, TestRunRig, TestLiveRunner, TestClaudeContextAdapter, TestDetector, TestObserve
 tests/test_rig_fixtures.py: mean, median, main, test_corpus_loads_and_fixtures_exist, test_solver_passes_the_oracle, test_noop_fails_the_oracle_because_fixtures_ship_red, test_summary_separates_solver_from_noop
-tests/test_status.py: TestStalenessScore, TestStalenessBand, TestGetStatusDictBackCompat, git_repo, TestGetStatusDictIntegration
+tests/test_status.py: TestStalenessScore, TestStalenessBand, TestGetStatusDictBackCompat, git_repo, TestGetStatusDictIntegration, TestStructureHashFreshness
 tests/test_symbols.py: TestByteStability
 tests/test_sync.py: TestGetGitDiff, TestUpdateArchitectureMd, TestSync
 tests/test_targets.py: TestSaveLoadDefaultTarget, TestDetectTargets, TestWriteToTarget, TestCustomTargets

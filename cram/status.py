@@ -59,14 +59,51 @@ def _line_count(path: str) -> int:
         return 0
 
 
+def _arch_structure_current(root: str) -> bool | None:
+    """True if ARCHITECTURE.md's embedded structure fingerprint matches the
+    current repo structure.
+
+    Since #24, `cram sync` only rewrites ARCHITECTURE.md when the repo structure
+    changes — a matching fingerprint is exactly the condition under which sync
+    skips the regen, so the file is fresh *by design* even when commits have
+    landed since it was last written. Returns None when there's no embedded hash
+    (pre-#24 file) so callers fall back to commit-count staleness.
+    """
+    context_dir = resolve_context_dir(root)
+    arch_path = os.path.join(context_dir, 'ARCHITECTURE.md')
+    try:
+        with open(arch_path, errors='ignore') as f:
+            content = f.read()
+    except OSError:
+        return None
+
+    from cram.sync_context import _stored_structure_hash, _structure_hash
+    stored = _stored_structure_hash(content)
+    if stored is None:
+        return None
+
+    from cram.init import scan_structure
+    try:
+        return stored == _structure_hash(scan_structure(root))
+    except Exception:
+        return None
+
+
 def _commits_since_context_update(root: str) -> int | None:
     """Commits on HEAD since ARCHITECTURE.md was last synced.
 
-    cram sync writes ARCHITECTURE.md to the working tree but doesn't commit it,
-    so we check mtime first: if the file is newer than the last commit it's
-    already up to date (0). Otherwise fall back to counting commits since it
-    was last committed.
+    If the embedded structure fingerprint still matches the repo, the file is
+    fresh by design (#24) — return 0 without counting intervening non-structural
+    commits, which sync intentionally does not regenerate for.
+
+    Otherwise: cram sync writes ARCHITECTURE.md to the working tree but doesn't
+    commit it, so we check mtime first — if the file is newer than the last
+    commit it's already up to date (0) — then fall back to counting commits
+    since it was last committed.
     """
+    if _arch_structure_current(root):
+        return 0
+
     rel_dir = CONTEXT_DIR if os.path.isdir(os.path.join(root, CONTEXT_DIR)) else LEGACY_CONTEXT_DIR
     rel = os.path.join(rel_dir, 'ARCHITECTURE.md')
     arch_path = os.path.join(root, rel)
@@ -182,7 +219,8 @@ def show_status(root: str = '.') -> None:
         lines = _line_count(fpath)
 
         flag = ''
-        if fname == 'ARCHITECTURE.md' and last_commit and mtime and last_commit > mtime:
+        if (fname == 'ARCHITECTURE.md' and last_commit and mtime
+                and last_commit > mtime and _arch_structure_current(root) is not True):
             flag = '  ← stale (commit after last sync)'
 
         try:

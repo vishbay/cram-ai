@@ -177,3 +177,55 @@ class TestGetStatusDictIntegration:
         score = result['staleness_score']
         assert band == staleness_band(score)
         assert result['state'] == ('stale' if band in ('stale', 'critical') else 'fresh')
+
+
+# ---------------------------------------------------------------------------
+# Structure-fingerprint freshness (#24 interaction): a matching embedded
+# structure hash means sync would skip the regen, so the file is fresh by
+# design even when non-structural commits have landed since.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    not bool(subprocess.run(['git', '--version'], capture_output=True).returncode == 0),
+    reason='git not available',
+)
+class TestStructureHashFreshness:
+    def _sync_arch_with_hash(self, repo):
+        """Embed the current structure fingerprint into ARCHITECTURE.md and commit."""
+        from cram.init import scan_structure
+        from cram.sync_context import _structure_hash, _with_structure_hash
+        arch = repo / CONTEXT_DIR / 'ARCHITECTURE.md'
+        h = _structure_hash(scan_structure(str(repo)))
+        arch.write_text(_with_structure_hash('# Arch\n', h))
+        _git('add', '.', cwd=repo)
+        _git('commit', '-m', 'sync arch', cwd=repo)
+
+    def test_matching_hash_suppresses_staleness_after_content_commits(self, git_repo):
+        # A source file whose *content* we'll churn without changing the tree.
+        (git_repo / 'mod.py').write_text('x = 0\n')
+        _git('add', '.', cwd=git_repo)
+        _git('commit', '-m', 'add mod', cwd=git_repo)
+        self._sync_arch_with_hash(git_repo)
+
+        # Content-only commits — repo structure is unchanged.
+        for i in range(1, 4):
+            (git_repo / 'mod.py').write_text(f'x = {i}\n')
+            _git('add', '.', cwd=git_repo)
+            _git('commit', '-m', f'edit {i}', cwd=git_repo)
+
+        result = get_status_dict(str(git_repo))
+        assert result['commits_since_sync'] == 0
+        assert result['staleness_band'] == 'fresh'
+
+    def test_structure_change_still_counts(self, git_repo):
+        self._sync_arch_with_hash(git_repo)
+        # New files change the tree → embedded hash no longer matches → counts.
+        _add_empty_commit(git_repo, 2)
+        result = get_status_dict(str(git_repo))
+        assert result['commits_since_sync'] >= 1
+
+    def test_no_embedded_hash_falls_back_to_commit_count(self, git_repo):
+        # git_repo's ARCHITECTURE.md has no structure marker (pre-#24 file).
+        _add_empty_commit(git_repo, 3)
+        result = get_status_dict(str(git_repo))
+        assert result['commits_since_sync'] == 3

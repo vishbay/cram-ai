@@ -4,8 +4,8 @@ Each source adapter (Claude Code, Cursor JSONL, Cursor workspace SQLite, Codex)
 translates a raw transcript into a flat list of :class:`Event` records plus a
 :class:`SessionMeta`. All metric math lives in :func:`derive_session`, which
 replays the events and reproduces the exact per-session dict the legacy inline
-analyzers returned (parity is enforced by tests/test_audit_parity.py against
-tests/legacy_audit_reference.py).
+analyzers returned (the pre-event-store implementation was pinned by a frozen
+parity oracle through v0.4.x; removed in v0.5.0 once the numbers were stable).
 
 Adapters never filter by repo: relevance is decided at derivation time, so an
 ingested session can be evaluated against any repo root.

@@ -91,6 +91,12 @@ Test suite for the package functionality
 
 ## Entry Points
 
+### Global Flags
+- `-V, --version` - Print the cram-ai version and exit
+- `-h, --help` - Print usage information and exit
+
+### Commands
+
 CLI commands dispatched through unified `cram` entry point:
 - `cram init [path]` - Bootstrap project configuration and install git hooks
 - `cram task "<description>"` - Populate CURRENT_TASK.md before coding session
@@ -152,4 +158,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 5eb1e02bea36abb5be8c98cd10984b0b39aeed15eeb65531b0942cd22ec76cfd -->
+<!-- cram:structure-hash 1d71ad06af155025209dafdaa28d0a4a24d1419c1f78f4f297e0df90cf5d8213 -->

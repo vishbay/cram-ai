@@ -26,6 +26,8 @@ Commands:
 
 --target choices: cursor | claude | copilot | codex | windsurf | all
   Set a default in .ai-context/config.toml:  [task] default_target = "cursor"
+
+Flags: -V, --version   Print the cram-ai version and exit
 """
 
 
@@ -34,6 +36,11 @@ def main() -> None:
 
     if not args or args[0] in ('-h', '--help'):
         print(USAGE)
+        sys.exit(0)
+
+    if args[0] in ('-V', '--version'):
+        from cram import __version__
+        print(f"cram-ai {__version__}")
         sys.exit(0)
 
     cmd, rest = args[0], args[1:]

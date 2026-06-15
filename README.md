@@ -23,6 +23,43 @@ via config.
 
 ---
 
+## When cram helps (and when it doesn't)
+
+The benefit to agentic coding is real but uneven. The honest split:
+
+**Where cram clearly helps:**
+
+- **Knowledge an agent cannot discover by searching.** An agent can grep code, but it can't
+  grep *"we chose cursor pagination over offset because offset breaks under concurrent writes"*
+  or *"users.email is nullable in prod despite the schema."* `DECISIONS.md`/`GOTCHAS.md` are
+  external tacit memory — this value is window-independent and the most durable.
+- **Cross-session re-discovery — which `cram audit` measures.** Agents start every session
+  amnesiac and re-derive the same orientation (grep → read → read). Front-loading it is a
+  direct hit on an *empirically measured* waste bucket, not an assumed one.
+- **Long-running / autonomous loops**, where context bloat compounds and dominates cost.
+- **Multi-agent / parallel fan-out**, where a shared briefing saves N agents from each
+  independently re-deriving the architecture.
+
+**Where the benefit is weaker — be honest about it:**
+
+- **Single agent, single session, familiar code.** Modern agents navigate well on their own;
+  per-task excerpts can be redundant with what they'd find anyway — sometimes net-neutral.
+- **Staleness is a real liability, not just a caveat.** A context layer that drifts from the
+  code is *worse* than none. The [staleness score](#context-health) mitigates this, but it's a
+  maintenance tax — and the auto-generated files (`ARCHITECTURE`/`SYMBOLS`) are exactly the
+  ones an agent could regenerate itself.
+- **Large context windows erode the excerpt-trimming value.** When a model ingests the whole
+  repo cheaply, "focused excerpts to save tokens" matters less. What *doesn't* erode is the
+  tacit knowledge above.
+
+**The framing:** cram's durable edge is **memory and judgment that lives outside the code**
+(decisions, gotchas) plus **audit-driven waste reduction** — not "helping the agent read
+files," which agents already do well. The more *autonomous, long-running, multi-session, or
+multi-agent* your coding gets, the more cram helps; the more it's *single-shot interactive
+editing in familiar code*, the closer to break-even.
+
+---
+
 ## Install
 
 ```bash

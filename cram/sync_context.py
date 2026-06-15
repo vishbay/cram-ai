@@ -137,12 +137,22 @@ def sync(root: str = '.') -> None:
     from cram.utils import get_model_recommendations
     ctx_model, _ = get_model_recommendations()
     print(f"Updating ARCHITECTURE.md via {ctx_model} ...")
-    updated = update_architecture_md(structure, diff, current)
+    try:
+        updated = update_architecture_md(structure, diff, current)
+    except RuntimeError as e:
+        print(f"Error: could not update ARCHITECTURE.md — {e}", file=sys.stderr)
+        print(
+            "Existing ARCHITECTURE.md left unchanged. Symbol index will still refresh below.",
+            file=sys.stderr,
+        )
+        updated = None
 
-    with open(arch_path, 'w') as f:
-        f.write(updated)
+    if updated:
+        with open(arch_path, 'w') as f:
+            f.write(updated)
 
-    print(f"Done. {CONTEXT_DIR}/ARCHITECTURE.md updated.")
+    if updated:
+        print(f"Done. {CONTEXT_DIR}/ARCHITECTURE.md updated.")
 
     print("Refreshing symbol index ...")
     _, sym_count = write_symbols_md(root)

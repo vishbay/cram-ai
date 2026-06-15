@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 CLAUDE_BIN = os.environ.get('CLAUDE_CODE_EXECPATH', 'claude')
@@ -211,9 +212,18 @@ def discover_models() -> list[dict]:
 
 
 def pick_context_model(available: list[dict]) -> dict | None:
-    """Cheapest model suitable for context/retrieval tasks."""
+    """Cheapest model suitable for context/retrieval tasks.
+
+    The Claude CLI is free inside Claude Code and produces far more reliable
+    doc/context regens than a small local model, so prefer it when present —
+    local Ollama/LM Studio models (slow, low-quality on large prompts like an
+    ARCHITECTURE.md rewrite) are kept only as the fallback.
+    """
     candidates = [m for m in available if m['tier'] in ('context', 'both')]
-    return candidates[0] if candidates else (available[0] if available else None)
+    if not candidates:
+        return available[0] if available else None
+    cli = [m for m in candidates if m['provider'] == 'claude-cli']
+    return cli[0] if cli else candidates[0]
 
 
 def pick_coding_model(available: list[dict]) -> dict | None:
@@ -330,15 +340,47 @@ def strip_code_fence(text: str) -> str:
     return '\n'.join(lines).strip()
 
 
+def _ollama_timeout() -> int:
+    """Per-request timeout for Ollama, in seconds. Local models — especially
+    reasoning models on large prompts — can be slow, so the default is
+    generous and overridable via CRAM_OLLAMA_TIMEOUT or settings.ollama_timeout."""
+    env = os.environ.get('CRAM_OLLAMA_TIMEOUT')
+    if env and env.isdigit():
+        return int(env)
+    try:
+        return int(load_settings().get('ollama_timeout', 300))
+    except (TypeError, ValueError):
+        return 300
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Drop <think>...</think> spans emitted by reasoning models (qwen3 etc.)."""
+    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+
 def _call_via_ollama(prompt: str, model: str, base_url: str = 'http://localhost:11434') -> str:
-    payload = json.dumps({'model': model, 'prompt': prompt, 'stream': False}).encode()
+    # think=False keeps reasoning models (qwen3, ...) from spending the whole
+    # budget on <think> traces; ignored by non-reasoning models.
+    payload = json.dumps(
+        {'model': model, 'prompt': prompt, 'stream': False, 'think': False}
+    ).encode()
     req = urllib.request.Request(
         f'{base_url}/api/generate',
         data=payload,
         headers={'Content-Type': 'application/json'},
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return json.loads(r.read())['response'].strip()
+    timeout = _ollama_timeout()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            response = json.loads(r.read())['response']
+    except (TimeoutError, urllib.error.URLError, OSError) as e:
+        raise RuntimeError(
+            f"Ollama model '{model}' did not respond within {timeout}s "
+            f"({base_url}): {e}. Local reasoning models can be slow on large "
+            f"prompts — raise CRAM_OLLAMA_TIMEOUT, pick a faster context_model "
+            f"in settings, or check that Ollama is running."
+        ) from e
+    return _strip_think_blocks(response)
 
 
 def _call_via_openai_compat(prompt: str, model: str, base_url: str,

@@ -11,26 +11,39 @@ Core Python package containing main functionality:
 - `context_dir.py` - Context directory resolution (`.ai-context/` preferred, `.cram-ai-context/` legacy fallback)
 - `find_context.py` - Scans and extracts relevant context from codebases; populates CURRENT_TASK.md and archives to TASK_HISTORY.jsonl
 - `init.py` - Initializes project configuration and CLAUDE.md files; triggers hook installation
-- `sync_context.py` - Synchronizes context with external systems and backends
+- `sync_context.py` - Synchronizes context with external systems and backends; error-resilient ARCHITECTURE.md updates
 - `status.py` - Shows .ai-context/ file freshness and repo sync state
 - `hooks.py` - Git post-commit and commit-msg hook installer for automated sync and decision recording
 - `mcp_server.py` - MCP server for Claude Code integration with task slot namespacing, usage logging, and decision proposals
 - `session.py` - Session state management: task archiving, slot tracking, grace period handling
 - `targets.py` - Target-specific output generation with byte-cap command protection rules
 - `symbols.py` - Public identifier extraction for SYMBOLS.md
-- `audit.py` - Measures orientation tax (reads vs. edits) from Claude Code transcripts
+- `audit.py` - Measures orientation tax (reads vs. edits) from Claude Code transcripts; dispatches to audit subsystem
+- `audit_events.py` - Parse Claude/Cursor/Codex transcripts into typed events and per-session metadata
+- `audit_findings.py` - Analyze audit data, derive context-mode findings and recommendations
+- `audit_report.py` - Render audit findings, waste attribution, and timeline reports
+- `audit_store.py` - Persist and incrementally manage audit database (SQLite)
 - `decisions.py` - Mine architectural decisions from git history; show DECISIONS.md
 - `decide.py` - Decision recording and management; append to DECISIONS.md
 - `gotcha.py` - Non-obvious trap documentation; append to GOTCHAS.md
+- `recommend.py` - Optimization recommendations registry; typed waste-class detectors and fixes
+- `rig.py` - Testing framework for agentic optimizer verification (task corpus, fixtures, providers, runners, oracle)
 - `ui.py` - Textual TUI dashboard for decisions, sessions, health, task history, and command execution
 - `benchmark.py` - Cache-write cost modeling and token savings benchmarking
-- `utils.py` - Shared utility functions for context operations
+- `cost_model.py` - Multi-provider pricing model; orientation cost computation with provider selection
+- `utils.py` - Shared utilities: model discovery, LLM routing (Claude CLI / Ollama / OpenAI-compat / Gemini), Ollama timeout handling
 - `__init__.py` - Package initialization
 
 ### `.claude/`
 Claude-specific configuration and settings:
 - `settings.local.json` - Local settings for Claude integration and behavior
 - `hooks/` - SessionStart hook for auto-injecting context
+
+### `examples/`
+Example corpora and test fixtures for cram rig:
+- `rig/` - cram rig example framework
+  - `corpus.example.json` - Example task corpus
+  - `fixtures/` - Pre-made testing fixtures (with TASK.md, code, tests)
 
 ### `templates/`
 Template files for project initialization
@@ -55,6 +68,7 @@ Test suite for the package functionality
 - **Package Management**: pip / setuptools
 - **Testing**: pytest
 - **TUI**: Textual (optional, cram[tui])
+- **Database**: SQLite (audit store, optional)
 
 ## Primary Features
 
@@ -67,18 +81,13 @@ Test suite for the package functionality
 - Task slot namespacing for concurrent agent invocations
 - **Architectural decision tracking**: Record and mine decisions from git history
 - **Gotcha documentation**: Maintain repository-specific non-obvious traps and workarounds
-- **Orientation tax audit**: Measure reads-vs-edits efficiency from transcripts
-- **Interactive TUI dashboard** (5 tabs):
-  - **Decisions**: Pending agent proposals, accept/delete history
-  - **Sessions**: Claude Code sessions with reads, edits, read-to-edit ratio, and active task per session
-  - **Health**: Staleness score, commits since last sync, per-file token budgets
-  - **History**: Recent `cram task` invocations; active session task shown in green
-  - **Actions**: Execute `cram sync`, `cram task`, `cram benchmark`, `cram doctor` with live output
-  - Auto-refreshes every 30s; tabs refresh on switch
+- **Orientation tax audit**: Measure reads-vs-edits efficiency from transcripts; per-session context-mode analysis
+- **Optimization recommendations**: Typed waste-class detectors with recommended fixes
+- **Agentic testing framework (cram rig)**: Verify optimizer correctness via task corpus, fixture execution, and oracle validation
+- **Interactive TUI dashboard** (5 tabs): Decisions, Sessions, Health, History, Actions; auto-refresh every 30s
 - Usage logging (task, tokens, timestamp) in JSONL format
 - Task history archiving (per-session task invocations with timestamps)
-- Suggested decisions (from agents) logged to suggestions.jsonl
-- Custom targets via config.toml with marker-based upsert support
+- Multi-provider LLM support (Claude CLI / Ollama / OpenAI-compat / Gemini) with configurable timeouts
 
 ## Entry Points
 
@@ -92,8 +101,9 @@ CLI commands dispatched through unified `cram` entry point:
 - `cram decide "<statement>"` - Append architectural decision to DECISIONS.md
 - `cram decisions [--mine] [--days N]` - Show or mine decisions from git history
 - `cram gotcha "<trap>"` - Append non-obvious trap to GOTCHAS.md
-- `cram audit [--days N] [--all]` - Measure orientation tax from Claude Code transcripts
+- `cram audit [--days N] [--all] [--session]` - Measure orientation tax from Claude Code transcripts; per-session breakdown with context-mode detection
 - `cram benchmark [--days N]` - Show token savings vs full-repo auto-indexing
+- `cram rig <corpus-path> [--observe]` - Run task fixtures against agentic optimizer; verify correctness and cost
 - `cram doctor [path]` - Check setup: models, hooks, git, context files
 - `cram hook install|uninstall [path]` - Manage git post-commit and commit-msg hooks
 - `cram mcp [--repo PATH]` - Start MCP server (stdio) for Claude Code / agents

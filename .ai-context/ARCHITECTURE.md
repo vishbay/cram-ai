@@ -59,6 +59,7 @@ Test suite for the package functionality
 | `setup.py` | setuptools shim for pip compatibility |
 | `requirements.txt` | Python dependencies |
 | `PROJECT_CONTEXT.md` | Project goals and context documentation |
+| `PLAN_CARRIED_OUTPUT.md` | Carried-output optimization loop design (advisory-tightening phase) |
 | `.gitignore` | Git exclusion rules |
 
 ## Tech Stack
@@ -83,6 +84,7 @@ Test suite for the package functionality
 - **Gotcha documentation**: Maintain repository-specific non-obvious traps and workarounds
 - **Orientation tax audit**: Measure reads-vs-edits efficiency from transcripts; per-session context-mode analysis
 - **Optimization recommendations**: Typed waste-class detectors with recommended fixes
+- **Carried-output loop** (Option A, advisory-tightening): Detect oversized tool results, auto-tighten `[output]` caps in config, verify with `cram rig --observe`; active runtime truncation (Option B) deferred pending evidence caps are ignored
 - **Agentic testing framework (cram rig)**: Verify optimizer correctness via task corpus, fixture execution, and oracle validation
 - **Interactive TUI dashboard** (5 tabs): Decisions, Sessions, Health, History, Actions; auto-refresh every 30s
 - **Structure-hash deduplication**: Skip ARCHITECTURE.md LLM regeneration when repo structure is unchanged
@@ -158,4 +160,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 1d71ad06af155025209dafdaa28d0a4a24d1419c1f78f4f297e0df90cf5d8213 -->
+<!-- cram:structure-hash 96e50beff9941ac620d1700bb89bf3bc003f8c8ae454bdddf08ae96ae1a34a40 -->

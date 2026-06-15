@@ -32,12 +32,10 @@ examples/rig/fixtures/add-cli-flag/app.py: main
 examples/rig/fixtures/add-cli-flag/test_app.py: test_result_always_printed, test_quiet_has_no_debug, test_verbose_emits_debug
 examples/rig/fixtures/fix-failing-test/stats.py: mean, median
 examples/rig/fixtures/fix-failing-test/test_stats.py: test_mean, test_median_odd, test_median_even
-tests/legacy_audit_reference.py: ratio_band, collect_audit, run_audit, run_compare, main
 tests/test_audit.py: TestAnalyzeTranscript, TestRatioBand, TestCollectAudit, TestContextBloat, TestRetryLoops, TestRunCompare, TestFindAllToolUse, TestAuditConstants, TestCursorTranscript, TestCursorWorkspaceDb, TestCollectAuditWithCursor, TestCodexTranscript, TestCollectAuditWithCodex
 tests/test_audit_drilldown.py: TestPerSessionFileCounts, TestTopReadFiles
 tests/test_audit_findings.py: TestRules, TestEndToEnd
 tests/test_audit_measured.py: TestPerSessionMeasured, TestAggregateMeasured, TestCodexRelativePatchPaths
-tests/test_audit_parity.py: test_frozen_oracle_removal_trigger, TestClaudeParity, TestCursorJsonlParity, TestCursorDbParity, TestCodexParity, TestCollectParity
 tests/test_audit_report.py: TestRenderReport, TestRunReport
 tests/test_audit_store.py: TestResolveDbPath, TestRoundtrip, TestLedger, TestInvalidation, TestCursorDbSessions, TestIncrementalCollect, TestParseFailureSurfacing, TestContextModeDetection, TestContextModeSegment, TestIngestProgress
 tests/test_audit_timeline.py: TestTimelineRows, TestConsecutiveUsageCollapse, TestWasteAttribution, TestRunSessionCLI

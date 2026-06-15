@@ -152,4 +152,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 4d7a8803632547187c9c0bc519eb69e8353f9a816736ef051065e175f9c724b8 -->
+<!-- cram:structure-hash 5eb1e02bea36abb5be8c98cd10984b0b39aeed15eeb65531b0942cd22ec76cfd -->

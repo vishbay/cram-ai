@@ -109,7 +109,7 @@ def orientation_tokens(repo_tokens: int, repo_files: int) -> int:
 # the 400-tok external target. SYMBOLS scales with repo size → no flat cap.
 FILE_BUDGETS = {
     'ARCHITECTURE.md': int(os.environ.get('CRAM_BUDGET_ARCHITECTURE', '3000')),
-    'DECISIONS.md':    int(os.environ.get('CRAM_BUDGET_DECISIONS',    '1500')),
+    'DECISIONS.md':    int(os.environ.get('CRAM_BUDGET_DECISIONS',    '1800')),
     'GOTCHAS.md':      int(os.environ.get('CRAM_BUDGET_GOTCHAS',      '800')),
     'CURRENT_TASK.md': int(os.environ.get('CRAM_BUDGET_TASK',         '2000')),
 }

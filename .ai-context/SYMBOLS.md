@@ -1,8 +1,9 @@
 cram/add_context.py: add_files, main
-cram/audit.py: ratio_band, collect_audit, run_audit, run_report, run_compare, run_session, format_layer_row, collect_layer, run_layer, main
+cram/audit.py: ratio_band, collect_audit, run_audit, run_report, run_report_html, run_compare, run_session, format_layer_row, collect_layer, run_layer, main
 cram/audit_events.py: Event, SessionMeta, repo_rel, parse_claude, parse_cursor_jsonl, parse_cursor_db, parse_codex, derive_session, derive_session_timeline
 cram/audit_findings.py: and, derive_findings
 cram/audit_report.py: render_report
+cram/audit_report_html.py: render_report_html
 cram/audit_store.py: resolve_db_path, AuditStore
 cram/benchmark.py: run_benchmark, main
 cram/cli.py: main
@@ -38,6 +39,7 @@ tests/test_audit_findings.py: TestRules, TestEndToEnd
 tests/test_audit_layers.py: TestLayerRows, TestRunLayer
 tests/test_audit_measured.py: TestPerSessionMeasured, TestAggregateMeasured, TestCodexRelativePatchPaths
 tests/test_audit_report.py: TestRenderReport, TestSessionIdent, TestRunReport
+tests/test_audit_report_html.py: TestRenderReportHtml, TestRunReportHtml
 tests/test_audit_store.py: TestResolveDbPath, TestRoundtrip, TestLedger, TestInvalidation, TestCursorDbSessions, TestIncrementalCollect, TestParseFailureSurfacing, TestContextModeDetection, TestContextModeSegment, TestIngestProgress
 tests/test_audit_timeline.py: TestTimelineRows, TestConsecutiveUsageCollapse, TestWasteAttribution, TestRunSessionCLI
 tests/test_cli.py: TestVersionFlag, TestUsage

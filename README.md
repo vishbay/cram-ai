@@ -37,6 +37,7 @@ cram gives that waste a profile.
 | Where did this session's tokens go? | `cram audit --session <id>` |
 | Which sessions are wasting orientation tokens? | `cram audit` |
 | Which files get re-read across sessions? | `cram audit --report` |
+| Want a shareable visual report? | `cram audit --report-html` |
 | Did cram context, claude-context, or another optimizer help? | `cram rig ...` |
 | Did a real session use fewer tokens after a change? | `cram audit --compare A B` |
 | Is optional repo context stale or too large? | `cram status` |
@@ -292,6 +293,8 @@ cram audit --days 7                # narrower window
 cram audit --all                   # all known projects
 cram audit --json                  # machine-readable output
 cram audit --report [FILE]         # shareable markdown
+cram audit --report-html [FILE]    # standalone HTML report (opens in your browser)
+cram audit --layer NAME            # drill into one waste class (orientation, repeated, ...)
 cram audit --compare PATH_A PATH_B # compare two repo checkouts side by side
 cram audit --reingest              # ignore cache and re-parse
 ```

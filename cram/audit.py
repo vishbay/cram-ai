@@ -915,23 +915,36 @@ def run_compare(path_a: str, path_b: str, days: int = 30,
 def _resolve_session_path(ident: str, repo_root: str) -> str | None:
     """Resolve a --session identifier to a transcript path.
 
-    Accepts a full path, or a session id / id-prefix matched against the
-    *.jsonl files in this repo's ~/.claude/projects/ directory (newest match
-    wins on a prefix tie).
+    Accepts a full path, a bare UUID / UUID-prefix, or a partial session id.
+    Searches Claude's per-repo project dir first, then Codex's global date-
+    tree (~/.codex/sessions/YYYY/MM/DD/*.jsonl), matching by UUID embedded in
+    the filename. Newest match wins on a prefix tie.
     """
     if os.path.isfile(ident):
         return ident
+
+    # ── Claude: per-repo project dir ─────────────────────────────────────────
     td = _project_transcript_dir(repo_root)
-    if not td:
-        return None
-    exact = os.path.join(td, ident if ident.endswith('.jsonl') else ident + '.jsonl')
-    if os.path.isfile(exact):
-        return exact
-    matches = [f for f in glob.glob(os.path.join(td, '*.jsonl'))
-               if os.path.basename(f).startswith(ident)]
-    if not matches:
-        return None
-    return max(matches, key=os.path.getmtime)
+    if td:
+        exact = os.path.join(td, ident if ident.endswith('.jsonl') else ident + '.jsonl')
+        if os.path.isfile(exact):
+            return exact
+        matches = [f for f in glob.glob(os.path.join(td, '*.jsonl'))
+                   if os.path.basename(f).startswith(ident)]
+        if matches:
+            return max(matches, key=os.path.getmtime)
+
+    # ── Codex: global date-tree, match by embedded UUID ──────────────────────
+    sd = _codex_sessions_dir()
+    if sd:
+        codex_matches = [
+            f for f in glob.glob(os.path.join(sd, '**', '*.jsonl'), recursive=True)
+            if audit_events._session_ident(f).startswith(ident)
+        ]
+        if codex_matches:
+            return max(codex_matches, key=os.path.getmtime)
+
+    return None
 
 
 def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
@@ -939,11 +952,19 @@ def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
     path = _resolve_session_path(ident, repo_root)
     if path is None:
         print(f"No transcript found for session {ident!r}.", file=sys.stderr)
+        hints = []
         if _project_transcript_dir(repo_root) is None:
-            print("  (no ~/.claude/projects/ directory for this repo)", file=sys.stderr)
+            hints.append('no ~/.claude/projects/ directory for this repo')
+        if _codex_sessions_dir() is None:
+            hints.append('no ~/.codex/sessions/ directory')
+        if hints:
+            print(f"  ({'; '.join(hints)})", file=sys.stderr)
         sys.exit(1)
 
-    parsed = audit_events.parse_claude(path)
+    sd = _codex_sessions_dir()
+    is_codex = sd and os.path.abspath(path).startswith(os.path.abspath(sd))
+    parse_fn = audit_events.parse_codex if is_codex else audit_events.parse_claude
+    parsed = parse_fn(path)
     if parsed is None:
         print(f"Could not parse transcript: {path}", file=sys.stderr)
         sys.exit(1)

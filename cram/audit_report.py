@@ -171,8 +171,8 @@ def render_report(data: dict, repo_root: str) -> str:
         lines.append('')
         lines.append('## Session leaderboard')
         lines.append('')
-        lines.append('Heaviest measured sessions by fresh input-side tokens. Drill into a '
-                     'Claude row with `cram audit --session <id>` (Codex drill-in not yet wired).')
+        lines.append('Heaviest measured sessions by fresh input-side tokens. '
+                     'Drill in with `cram audit --session <id>` (Claude and Codex).')
         lines.append('')
         lines.append('| Session | Source | Input tok | Reads→edit | Ctx growth | Retries | Redundant |')
         lines.append('|---|---|---:|---:|---:|---:|---:|')

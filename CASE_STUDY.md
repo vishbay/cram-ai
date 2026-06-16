@@ -80,9 +80,26 @@ pre-loading adds ~2.7k startup tokens, so peak only drops ~10% despite turns
 nearly halving — that fixed cost amortizes better on larger tasks.
 
 ### Issue #2786 · sonnet · N=3 per arm
-_Pending — running. Baseline is the profiler #2786 rows above (~14× `core.py`
-re-reads, ~28 reads before first edit); the after arm with cram context is
-in progress and will be filled in here._
+
+**Valid before/after pending a re-run.** The first after-arm attempt was
+**invalid** and surfaced a real cram bug instead: `cram task --target claude
+--inject` selected the right file (`core.py · Option, Parameter,
+full_process_value`) but then **crashed** writing it — `_upsert_cram_section`
+passed code excerpts as the `re.sub` replacement string, so backslash/`\1`-style
+sequences in `core.py` raised an escape error. Only the cram **MCP pointer** was
+left in `CLAUDE.md` (591 B), so the "after" agent got **no context**. As
+expected with no context delivered, the runs matched/worsened the baseline:
+
+| Session (no context delivered — **invalid**) | Requests | Peak ctx | Re-reads `core.py` | First edit |
+|---|---|---|---|---|
+| `9d42fa08` | 68 | 83,176 | 13× | turn 34 |
+| `d5220339` | 64 | 86,329 | 13× | turn 26 |
+| `128b8cbf` | 41 | 69,766 | 12× | turn 34 |
+
+**Bug fixed** (replacement passed as a function so excerpts are written
+literally; regression test added). The valid #2786 before/after — the run most
+likely to show a large gap given the ~14× baseline — is to be re-run with the
+fix live (via the planned alternate agent runner, to avoid Claude rate limits).
 
 ---
 

@@ -6,11 +6,13 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import urllib.error
 from pathlib import Path
 
 CLAUDE_BIN = os.environ.get('CLAUDE_CODE_EXECPATH', 'claude')
+CODEX_BIN = os.environ.get('CODEX_EXECPATH', 'codex')
 
 _SETTINGS_FILE = Path.home() / '.config' / 'cram-ai' / 'settings.json'
 
@@ -21,6 +23,9 @@ _CATALOGUE: dict[str, list[tuple]] = {
         ('cli/haiku',  'Claude Haiku (claude CLI)',  'context', 0,    2),
         ('cli/sonnet', 'Claude Sonnet (claude CLI)', 'coding',  0,    6),
         ('cli/opus',   'Claude Opus (claude CLI)',   'coding',  0,    9),
+    ],
+    'codex-cli': [
+        ('codex-cli/default', 'Codex CLI (codex exec)', 'context', 0, 4),
     ],
     'anthropic': [
         ('anthropic/claude-haiku-4-5-20251001', 'Claude Haiku 4.5',  'context', 0.80,  2),
@@ -74,6 +79,14 @@ def save_settings(updates: dict) -> None:
 def _check_claude_cli() -> bool:
     try:
         r = subprocess.run([CLAUDE_BIN, '--version'], capture_output=True, timeout=3)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _check_codex_cli() -> bool:
+    try:
+        r = subprocess.run([CODEX_BIN, '--version'], capture_output=True, timeout=3)
         return r.returncode == 0
     except Exception:
         return False
@@ -168,26 +181,30 @@ def discover_models() -> list[dict]:
     if _check_claude_cli():
         _add('claude-cli')
 
-    # 2. Ollama — local, free
+    # 2. Codex CLI — free for logged-in Codex users, useful in Codex-oriented repos
+    if _check_codex_cli():
+        _add('codex-cli')
+
+    # 3. Ollama — local, free
     settings = load_settings()
     available.extend(_probe_ollama(settings.get('ollama_url', 'http://localhost:11434')))
 
-    # 3. LM Studio — local, free, OpenAI-compatible (default port 1234)
+    # 4. LM Studio — local, free, OpenAI-compatible (default port 1234)
     available.extend(_probe_lmstudio(settings.get('lmstudio_url', 'http://localhost:1234')))
 
-    # 4. Enterprise: AWS Bedrock (IAM / instance role, no API key needed)
+    # 5. Enterprise: AWS Bedrock (IAM / instance role, no API key needed)
     if _check_aws_credentials():
         _add('bedrock')
 
-    # 5. Enterprise: GCP Vertex AI (ADC / service account, no API key needed)
+    # 6. Enterprise: GCP Vertex AI (ADC / service account, no API key needed)
     if _check_gcp_credentials():
         _add('vertex_ai')
 
-    # 6. Enterprise: Azure OpenAI (managed identity / AZURE_OPENAI_ENDPOINT)
+    # 7. Enterprise: Azure OpenAI (managed identity / AZURE_OPENAI_ENDPOINT)
     if _check_azure_credentials():
         _add('azure')
 
-    # 7. Direct API keys
+    # 8. Direct API keys
     if os.environ.get('ANTHROPIC_API_KEY'):
         _add('anthropic')
     if os.environ.get('OPENAI_API_KEY'):
@@ -195,7 +212,7 @@ def discover_models() -> list[dict]:
     if os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY'):
         _add('gemini')
 
-    # 8. Custom proxy (corporate gateway, LiteLLM proxy, etc.)
+    # 9. Custom proxy (corporate gateway, LiteLLM proxy, etc.)
     proxy = settings.get('proxy', {})
     if proxy.get('base_url'):
         available.append({
@@ -214,16 +231,48 @@ def discover_models() -> list[dict]:
 def pick_context_model(available: list[dict]) -> dict | None:
     """Cheapest model suitable for context/retrieval tasks.
 
-    The Claude CLI is free inside Claude Code and produces far more reliable
-    doc/context regens than a small local model, so prefer it when present —
-    local Ollama/LM Studio models (slow, low-quality on large prompts like an
-    ARCHITECTURE.md rewrite) are kept only as the fallback.
+    Agent-native CLIs are free for logged-in users and usually match the tool
+    consuming the context. Prefer Codex CLI in Codex-oriented repos/sessions;
+    otherwise keep Claude CLI as the long-standing default. Local Ollama/LM
+    Studio models remain fallback options for users who do not have either CLI.
     """
     candidates = [m for m in available if m['tier'] in ('context', 'both')]
     if not candidates:
         return available[0] if available else None
-    cli = [m for m in candidates if m['provider'] == 'claude-cli']
-    return cli[0] if cli else candidates[0]
+    codex_cli = [m for m in candidates if m['provider'] == 'codex-cli']
+    claude_cli = [m for m in candidates if m['provider'] == 'claude-cli']
+    if codex_cli and _prefer_codex_context():
+        return codex_cli[0]
+    if claude_cli:
+        return claude_cli[0]
+    if codex_cli:
+        return codex_cli[0]
+    return candidates[0]
+
+
+def _prefer_codex_context() -> bool:
+    """Return True when auto context generation should use Codex CLI.
+
+    Explicit `context_model` settings still win before this helper runs. This
+    only nudges auto mode when the current repo/session is already Codex-shaped.
+    """
+    preferred = os.environ.get('CRAM_CONTEXT_PROVIDER', '').lower()
+    if preferred in ('codex', 'codex-cli'):
+        return True
+    if preferred in ('claude', 'claude-cli'):
+        return False
+    if any(os.environ.get(k) for k in ('CODEX_HOME', 'CODEX_SESSION_ID', 'CODEX_SANDBOX')):
+        return True
+
+    try:
+        from cram.targets import load_default_target
+        root = find_git_root(os.getcwd())
+        if load_default_target(root) == 'codex':
+            return True
+        return os.path.exists(os.path.join(root, '.codex')) or \
+               os.path.exists(os.path.join(root, 'AGENTS.md'))
+    except Exception:
+        return False
 
 
 def pick_coding_model(available: list[dict]) -> dict | None:
@@ -278,6 +327,8 @@ def call_context_model(prompt: str) -> str:
     if not model_id or model_id == 'auto':
         return call_model(prompt)
 
+    if model_id.startswith('codex-cli/'):
+        return _call_via_codex_cli(prompt, model_id.split('/', 1)[1])
     if model_id.startswith('cli/'):
         return _call_via_cli(prompt, model_id.split('/', 1)[1])
     if model_id.startswith('ollama/'):
@@ -512,3 +563,50 @@ def _call_via_cli(prompt: str, model: str) -> str:
             "No ANTHROPIC_API_KEY set and `claude` CLI not found. "
             "Set ANTHROPIC_API_KEY or AICONTEXT_MODEL=provider/model and the matching API key."
         )
+
+
+def _call_via_codex_cli(prompt: str, model: str = 'default') -> str:
+    system = (
+        "You are a text generator for cram-ai context preparation. "
+        "Output ONLY the exact content requested. Never use tools. Never ask "
+        "for permission. Never describe what you will do. Return the raw text "
+        "content directly."
+    )
+    full_prompt = f"{system}\n\n{prompt}"
+    with tempfile.TemporaryDirectory(prefix='cram-codex-') as tmp:
+        out_path = os.path.join(tmp, 'last-message.txt')
+        cmd = [
+            CODEX_BIN, 'exec',
+            '--sandbox', 'read-only',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--cd', tmp,
+            '--output-last-message', out_path,
+        ]
+        if model and model != 'default':
+            cmd.extend(['--model', model])
+        cmd.append('-')
+        try:
+            result = subprocess.run(
+                cmd,
+                input=full_prompt,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=int(os.environ.get('CRAM_CODEX_TIMEOUT', '300')),
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Error calling codex CLI: {e.stderr}", file=sys.stderr)
+            raise
+        except FileNotFoundError:
+            raise RuntimeError(
+                "`codex` CLI not found. Set CODEX_EXECPATH or choose another "
+                "context_model in ~/.config/cram-ai/settings.json."
+            )
+
+        if os.path.exists(out_path):
+            with open(out_path) as f:
+                text = f.read().strip()
+            if text:
+                return text
+        return result.stdout.strip()

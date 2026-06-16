@@ -92,6 +92,18 @@ class SessionMeta:
     cwd: str | None = None            # codex session_meta.cwd (last seen)
 
 
+_UUID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+
+
+def _session_ident(path: str) -> str:
+    """A stable session id from a transcript path: the embedded UUID if present
+    (Claude files are bare UUIDs; Codex files are rollout-<ts>-<uuid>), else the
+    filename stem."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    m = _UUID_RE.search(stem)
+    return m.group(0) if m else stem
+
+
 def _find_all_tool_use(obj: object, depth: int = 0) -> list[dict]:
     if depth > 8:
         return []
@@ -612,6 +624,10 @@ def derive_session(meta: SessionMeta, events: list[Event],
         'error_results':           error_results,
         'edit_churn':              sum(c - 1 for c in edit_counts.values() if c > 1),
         'mtime':                   meta.mtime,
+        # Session identifier. Cursor-db composers share a path, so prefer their
+        # external_id; otherwise pull the UUID out of the filename (Claude files
+        # are bare UUIDs; Codex files are rollout-<ts>-<uuid>).
+        'session_id':              meta.external_id or _session_ident(meta.path),
         # Measured-orientation inputs (raw; pricing applied at query time)
         'input_tokens':            input_tokens,
         'requests_before_edit':    requests_before_edit,

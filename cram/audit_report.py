@@ -13,6 +13,23 @@ import os
 
 from cram.audit_events import repo_rel
 
+# Finding id → how to verify the fix worked. Closes the profiler→referee loop:
+# every finding says evidence → fix → how to confirm it landed.
+_VERIFY = {
+    'repeated-reads':   'add the briefing, then `cram audit --compare <before> <after>` '
+                        '(or `cram rig`) — cross-session reads should drop.',
+    'high-orientation': 'front-load context, then re-run `cram audit` and watch the pre-edit '
+                        'share; confirm with `cram rig --providers baseline,cram`.',
+    'oversized-results':'cap the output, then `cram audit --session <id>` — the carried cost '
+                        'should be gone.',
+    'cache-blind':      'fix the prefix/cache config, then `cram audit` — cache-engaged '
+                        'sessions should rise.',
+    'retry-loops':      'record the gotcha, then re-audit — failed tool calls/session should fall.',
+    'edit-churn':       'tighten the task brief, then re-audit — same-file re-edits should fall.',
+    'context-bloat':    'trim results / tune compaction, then `cram audit --session <id>` — '
+                        'growth should drop.',
+}
+
 
 def render_report(data: dict, repo_root: str) -> str:
     """Return a markdown report for a collect_audit() result."""
@@ -67,7 +84,32 @@ def render_report(data: dict, repo_root: str) -> str:
         lines.append('')
         for i, fd in enumerate(findings, 1):
             lines.append(f'{i}. **{fd["id"]}** — {fd["evidence"]}')
-            lines.append(f'   → {fd["fix"]}')
+            lines.append(f'   → fix: {fd["fix"]}')
+            verify = _VERIFY.get(fd['id'])
+            if verify:
+                lines.append(f'   → verify: {verify}')
+
+    # ── Session leaderboard ─────────────────────────────────────────────────────
+    board = data.get('leaderboard') or []
+    if board:
+        lines.append('')
+        lines.append('## Session leaderboard')
+        lines.append('')
+        lines.append('Heaviest measured sessions by fresh input-side tokens. Drill into a '
+                     'Claude row with `cram audit --session <id>` (Codex drill-in not yet wired).')
+        lines.append('')
+        lines.append('| Session | Source | Input tok | Reads→edit | Ctx growth | Retries | Redundant |')
+        lines.append('|---|---|---:|---:|---:|---:|---:|')
+        for s in board:
+            sid = str(s.get('session_id', ''))[:8] or '—'
+            src = s.get('source', 'claude')
+            growth = s.get('context_growth_factor')
+            growth_s = f'{growth:.1f}×' if growth else '—'
+            lines.append(
+                f'| `{sid}` | {src} | {s.get("input_tokens", 0):,} '
+                f'| {s.get("reads_before_edit", 0)} | {growth_s} '
+                f'| {s.get("error_results", 0)} | {s.get("redundant_reads", 0)} |'
+            )
 
     # ── Top repeated files ────────────────────────────────────────────────────
     repeated = [t for t in data.get('top_read_files', []) if t[1] > 1]

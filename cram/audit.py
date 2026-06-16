@@ -525,6 +525,12 @@ def _collect_audit_inner(store, repo_root: str, days: int,
 
     recent = sorted(all_sessions, key=lambda s: s['mtime'], reverse=True)[:20]
 
+    # Waste leaderboard: the heaviest *measured* sessions (those with token
+    # usage — Claude/Codex), ranked by fresh input-side spend. All columns the
+    # report shows from these are measured; reader drills in with --session.
+    measured_pool = [s for s in all_sessions if s.get('input_tokens', 0) > 0]
+    leaderboard = sorted(measured_pool, key=lambda s: s['input_tokens'], reverse=True)[:10]
+
     # Neutral-auditor view: split on whether a context tool was active. Only
     # meaningful when the pool actually contains both — otherwise it's noise.
     cm_on  = [s for s in all_sessions if s.get('context_mode')]
@@ -582,6 +588,7 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'projects':                  project_summaries,
         'weekly':                    weekly,
         'recent':                    recent,
+        'leaderboard':               leaderboard,
         # Live transcripts whose parse failed this run; their sessions are
         # missing from every number above.
         'parse_failures':            len(store.run_failures),

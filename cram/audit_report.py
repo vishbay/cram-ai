@@ -77,32 +77,56 @@ def render_report(data: dict, repo_root: str) -> str:
     lines.append(f'Sessions: {seg}.')
 
     # ── Token waterfall ─────────────────────────────────────────────────────────
+    tree = data.get('spine_tree')
     spine = data.get('token_spine') or {}
     spine_total = spine.get('total', 0) or 0
-    if spine_total > 0:
+    if tree or spine_total > 0:
         lines.append('')
         lines.append('## Token waterfall')
         lines.append('')
-        lines.append('**Measured spine** — effective input-side composition. Every token is '
-                     'counted once, so these sum to the total.')
+
+    if tree:
+        n = tree['pool_sessions']
+        total = tree['total']
+        lines.append('**Measured spine** — effective input by composition × pre/post-edit, over '
+                     f'{n} edit session{"s" if n != 1 else ""} with token usage. '
+                     'Children sum to their parent.')
         lines.append('')
         lines.append('```')
+        lines.append(f'eff input  {total:>13,.0f}')
+        comps = sorted(tree['components'], key=lambda c: c['eff'], reverse=True)
+        for i, c in enumerate(comps):
+            last = i == len(comps) - 1
+            branch, childpfx = ('└─', '   ') if last else ('├─', '│  ')
+            pct = c['eff'] / total * 100 if total else 0
+            lines.append(f'{branch} {c["label"]:<11} {pct:3.0f}%  {c["eff"]:>13,.0f}')
+            pre_pct = c['pre'] / c['eff'] * 100 if c['eff'] else 0
+            lines.append(f'{childpfx}├─ pre-edit   {pre_pct:3.0f}%')
+            lines.append(f'{childpfx}└─ post-edit  {100 - pre_pct:3.0f}%')
+        lines.append('```')
+        lines.append('')
+    elif spine_total > 0:
+        # No measured edit sessions → pre/post-edit is undefined; show the
+        # composition-only spine (still measured and exhaustive) over all sessions.
+        lines.append('**Measured spine** — effective input-side composition (all sessions). '
+                     'Children sum to the total.')
+        lines.append('')
+        lines.append('```')
+        lines.append(f'eff input  {spine_total:>13,.0f}')
         comps = sorted(
             [('cache read', spine.get('cache_read', 0)),
              ('fresh input', spine.get('fresh_input', 0)),
              ('cache write', spine.get('cache_write', 0))],
             key=lambda kv: kv[1], reverse=True,
         )
-        width = 30
-        mx = max((v for _, v in comps), default=0) or 1
-        for label, val in comps:
-            bar = '█' * max(1, round(val / mx * width)) if val else ''
-            pct = val / spine_total * 100
-            lines.append(f'{label:<12} {bar:<30} {val:>13,.0f}  {pct:3.0f}%')
-        lines.append(f'{"":<12} {"":<30} {"─" * 13}')
-        lines.append(f'{"total":<12} {"":<30} {spine_total:>13,.0f}   eff. input')
+        for i, (label, val) in enumerate(comps):
+            branch = '└─' if i == len(comps) - 1 else '├─'
+            pct = val / spine_total * 100 if spine_total else 0
+            lines.append(f'{branch} {label:<11} {pct:3.0f}%  {val:>13,.0f}')
         lines.append('```')
         lines.append('')
+
+    if tree or spine_total > 0:
         lines.append('**Estimated / overlapping attribution** — modeled and not mutually '
                      'exclusive, so these do **not** sum to the spine.')
         lines.append('')

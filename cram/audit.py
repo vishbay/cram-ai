@@ -506,6 +506,26 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     pre_edit_spend_eff_tokens = eff_pre / len(measured) if measured else None
     pre_edit_spend_cost       = (pre_edit_spend_eff_tokens * AUDIT_BASE_PRICE
                                  if pre_edit_spend_eff_tokens is not None else None)
+    # Spine tree for the waterfall: effective input by composition × pre/post-edit,
+    # over the same measured pool as the pre-edit share. Both axes are measured and
+    # exhaustive, so children reconcile to their parent (and to eff_tot).
+    spine_tree = None
+    if measured and eff_tot:
+        def _csum(field: str) -> float:
+            return float(sum(s[field] for s in measured))
+        comps = [
+            ('cache read',  _csum('cache_reads')  * CACHE_READ_MULT,
+                            _csum('pre_edit_cache_reads')  * CACHE_READ_MULT),
+            ('fresh input', _csum('input_tokens'), _csum('pre_edit_input_tokens')),
+            ('cache write', _csum('cache_writes') * CACHE_WRITE_MULT,
+                            _csum('pre_edit_cache_writes') * CACHE_WRITE_MULT),
+        ]
+        spine_tree = {
+            'pool_sessions': len(measured),
+            'total':         eff_tot,
+            'components':    [{'label': l, 'eff': e, 'pre': p} for l, e, p in comps],
+        }
+
     # Below this many measured sessions the share is reported as preliminary.
     PRELIMINARY_MIN_MEASURED = 5
 
@@ -603,6 +623,7 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'recent':                    recent,
         'leaderboard':               leaderboard,
         'token_spine':               token_spine,
+        'spine_tree':                spine_tree,
         # Live transcripts whose parse failed this run; their sessions are
         # missing from every number above.
         'parse_failures':            len(store.run_failures),

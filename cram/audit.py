@@ -838,6 +838,48 @@ def run_report(repo_root: str, days: int = 30, all_projects: bool = False,
         print(f"Wrote {out_path}")
 
 
+def run_report_html(repo_root: str, days: int = 30, all_projects: bool = False,
+                    out_path: str | None = None, reingest: bool = False,
+                    open_browser: bool | None = None) -> None:
+    """Render the standalone HTML report to a file and (optionally) open it.
+
+    Builds the same collect_audit() data as the markdown report, plus the
+    per-layer drilldown rows, and writes one self-contained HTML file.
+    out_path defaults to 'cram-audit-report.html' in the cwd. open_browser
+    defaults to True when stdout is a TTY (so it pops open interactively but
+    stays quiet in CI / pipes).
+    """
+    from cram.audit_report_html import render_report_html
+
+    store = audit_store.AuditStore.open()
+    try:
+        data = _collect_audit_inner(store, repo_root, days, all_projects, reingest)
+        if data is None:
+            print(f"No sessions found in the last {days} days.")
+            return
+        all_sessions, _ = _gather_sessions(store, repo_root, days, all_projects, False)
+        layers = {name: _layer_rows(name, all_sessions or [], repo_root)
+                  for name in LAYERS}
+    finally:
+        store.close()
+
+    out_path = out_path or 'cram-audit-report.html'
+    html = render_report_html(data, layers, repo_root)
+    with open(out_path, 'w') as f:
+        f.write(html)
+    abs_path = os.path.abspath(out_path)
+    print(f"Wrote {abs_path}")
+
+    if open_browser is None:
+        open_browser = sys.stdout.isatty()
+    if open_browser:
+        import webbrowser
+        try:
+            webbrowser.open(f'file://{abs_path}')
+        except Exception:
+            pass
+
+
 def _resolve_root(path: str) -> str:
     from cram.utils import find_git_root
     start = os.path.abspath(path)
@@ -1157,6 +1199,12 @@ def main() -> None:
                         metavar='FILE',
                         help='Emit a shareable markdown report '
                              '(to FILE, or stdout if omitted)')
+    parser.add_argument('--report-html', nargs='?', const='', default=None,
+                        dest='report_html', metavar='FILE',
+                        help='Emit a standalone HTML report '
+                             '(to FILE, or cram-audit-report.html if omitted)')
+    parser.add_argument('--no-open', action='store_true', dest='no_open',
+                        help='With --report-html, do not open the file in a browser')
     parser.add_argument('--session', default=None, metavar='ID',
                         help='Per-request waterfall for one session '
                              '(transcript path or session-id prefix)')
@@ -1182,6 +1230,12 @@ def main() -> None:
         return
 
     root = _resolve_root(args.path) if args.path else _resolve_root(os.getcwd())
+
+    if args.report_html is not None:
+        run_report_html(root, days=args.days, all_projects=args.all_projects,
+                        out_path=args.report_html or None, reingest=args.reingest,
+                        open_browser=False if args.no_open else None)
+        return
 
     if args.report is not None:
         run_report(root, days=args.days, all_projects=args.all_projects,

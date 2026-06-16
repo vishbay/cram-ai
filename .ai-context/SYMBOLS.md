@@ -1,5 +1,5 @@
 cram/add_context.py: add_files, main
-cram/audit.py: ratio_band, collect_audit, run_audit, run_report, run_compare, run_session, collect_layer, run_layer, main
+cram/audit.py: ratio_band, collect_audit, run_audit, run_report, run_compare, run_session, format_layer_row, collect_layer, run_layer, main
 cram/audit_events.py: Event, SessionMeta, repo_rel, parse_claude, parse_cursor_jsonl, parse_cursor_db, parse_codex, derive_session, derive_session_timeline
 cram/audit_findings.py: and, derive_findings
 cram/audit_report.py: render_report

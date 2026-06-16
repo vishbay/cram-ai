@@ -99,7 +99,7 @@ def _build_app(root: str):  # noqa: ANN202
     from textual.screen import ModalScreen
     from textual.widgets import (
         Button, DataTable, Footer, Header, Input, Label,
-        ListItem, ListView, ProgressBar, RichLog, Static,
+        ListItem, ListView, Markdown, ProgressBar, RichLog, Static,
         TabbedContent, TabPane,
     )
     from textual.reactive import reactive
@@ -108,7 +108,8 @@ def _build_app(root: str):  # noqa: ANN202
 
     from cram.context_dir import context_path
     from cram.audit import (_analyze_transcript_cached, _project_transcript_dir,
-                            collect_audit)
+                            collect_audit, collect_layer, format_layer_row, LAYERS)
+    from cram.audit_report import render_report
     from cram.audit_store import AuditStore
     from cram.health import context_health
 
@@ -738,10 +739,88 @@ def _build_app(root: str):  # noqa: ANN202
 
     # ── Main app ─────────────────────────────────────────────────
 
+    # ── Report pane ──────────────────────────────────────────────
+
+    class ReportPane(VerticalScroll):
+        """Full profiler report (token waterfall, findings → fix → verify,
+        session leaderboard) — the shareable markdown, rendered in the TUI from
+        the same render_report() the CLI uses. A thin viewer, no duplicated logic."""
+
+        def compose(self) -> ComposeResult:
+            yield Markdown('', id='report-body')
+
+        def on_mount(self) -> None:
+            self.refresh_report()
+
+        def refresh_report(self) -> None:
+            md = self.query_one('#report-body', Markdown)
+            try:
+                data = collect_audit(root, days=30)
+                if data is None:
+                    md.update('_No sessions found for this repo in the last 30 days._')
+                    return
+                md.update(render_report(data, root))
+            except Exception as ex:
+                md.update(f'**Error loading report:** {ex}')
+
+    # ── Layers pane (drilldown) ──────────────────────────────────
+
+    class LayersPane(VerticalScroll):
+        """Drill into one waste class — highlight a layer, see its contributors."""
+
+        _DESC = {
+            'orientation': 'reads before first edit (by session)',
+            'repeated':    'files re-read across sessions',
+            'redundant':   'files re-read within a session',
+            'carried':     'sessions carrying oversized tool output',
+            'retries':     'sessions with failed tool calls',
+            'churn':       'files re-edited within a session',
+        }
+
+        def compose(self) -> ComposeResult:
+            yield Label('[b]Waste layers[/b] — highlight to drill in', id='layers-header')
+            yield ListView(id='layers-list')
+            yield Static('', id='layers-body')
+
+        def on_mount(self) -> None:
+            lv = self.query_one('#layers-list', ListView)
+            if not len(lv):
+                for name in LAYERS:
+                    lv.append(ListItem(
+                        Label(f'{name}  [dim]{self._DESC[name]}[/dim]'),
+                        id=f'layer-{name}'))
+            self._show('orientation')
+
+        def refresh_layers(self) -> None:
+            lv = self.query_one('#layers-list', ListView)
+            item = lv.highlighted_child
+            name = item.id[len('layer-'):] if item and item.id else 'orientation'
+            self._show(name)
+
+        def on_list_view_highlighted(self, event: 'ListView.Highlighted') -> None:
+            if event.item is not None and event.item.id:
+                self._show(event.item.id[len('layer-'):])
+
+        def _show(self, name: str) -> None:
+            body = self.query_one('#layers-body', Static)
+            try:
+                rows = collect_layer(root, name, days=30)
+            except Exception as ex:
+                body.update(f'[red]Error: {ex}[/red]')
+                return
+            if not rows:
+                body.update(f'[dim]No {name} evidence in the last 30 days.[/dim]')
+                return
+            lines = [f'[b]{name}[/b]  [dim]{self._DESC[name]}[/dim]\n']
+            for r in rows[:15]:
+                lines.append('  ' + format_layer_row(name, r, root))
+            body.update('\n'.join(lines))
+
     class CramApp(App):
         TITLE = 'cram-ai'
         CSS = """
-        AuditPane, DecisionsPane, SessionsPane, HealthPane, ActionsPane {
+        AuditPane, ReportPane, LayersPane, DecisionsPane, SessionsPane,
+        HealthPane, ActionsPane {
             padding: 1 2;
         }
         Label#pending-header, Label#accepted-header, Label#slots-header,
@@ -811,6 +890,10 @@ def _build_app(root: str):  # noqa: ANN202
             with TabbedContent(initial='audit'):
                 with TabPane('Audit', id='audit'):
                     yield AuditPane(id='audit-pane')
+                with TabPane('Report', id='report'):
+                    yield ReportPane(id='report-pane')
+                with TabPane('Layers', id='layers'):
+                    yield LayersPane(id='layers-pane')
                 with TabPane('Sessions', id='sessions'):
                     yield SessionsPane(id='sessions-pane')
                 with TabPane('Decisions', id='decisions'):
@@ -831,6 +914,8 @@ def _build_app(root: str):  # noqa: ANN202
             pane_id = event.pane.id if event.pane else None
             refresh_map = {
                 'audit':     ('#audit-pane',     'refresh_audit'),
+                'report':    ('#report-pane',    'refresh_report'),
+                'layers':    ('#layers-pane',    'refresh_layers'),
                 'decisions': ('#decisions-pane', 'refresh_decisions'),
                 'sessions':  ('#sessions-pane',  'refresh_sessions'),
                 'health':    ('#health-pane',    'refresh_health'),

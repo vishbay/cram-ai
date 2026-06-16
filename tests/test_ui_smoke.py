@@ -50,3 +50,25 @@ class TestUiSmoke:
         # The UI reads it directly; just assert no crash on empty dir
         history_path = empty_repo / '.ai-context' / 'TASK_HISTORY.jsonl'
         assert not history_path.exists()  # proves empty state
+
+    def test_report_and_layers_tabs_render(self, empty_repo, monkeypatch):
+        """Headlessly mount the app and visit the Report + Layers tabs."""
+        import asyncio
+        from cram.ui import _build_app
+        from textual.widgets import Markdown, ListView
+        # Don't read the user's real transcripts during the test.
+        import cram.ui  # ensure module import path
+        AppClass = _build_app(str(empty_repo))
+
+        async def drive():
+            app = AppClass()
+            async with app.run_test() as pilot:
+                for tab in ('report', 'layers', 'audit'):
+                    app.query_one('TabbedContent').active = tab
+                    await pilot.pause()
+                md = app.query_one('#report-body', Markdown)
+                lv = app.query_one('#layers-list', ListView)
+                assert md is not None
+                assert len(lv) == 6   # one item per waste layer
+
+        asyncio.run(drive())

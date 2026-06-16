@@ -259,9 +259,9 @@ activity. It also attributes waste to concrete causes:
 
 ```text
 Carried waste:
-  cram/events.py: 12,307 tok x 18 later turns = 221,526 carried tok
+  cram/audit_events.py: 12,307 tok x 18 later turns = 221,526 carried tok
 
-Redundant re-reads: 2x cram/events.py
+Redundant re-reads: 2x cram/audit_events.py
 Failed tool calls: 1
 ```
 
@@ -272,7 +272,9 @@ caused the cost.
 
 ## Context layer
 
-The context layer is a repo-local memory system for agents.
+The context layer is **optional** — it is one remediation among several, not required to use
+cram. Reach for it only when your audit shows repeated re-discovery; the audit and `cram rig`
+work without it. It is a repo-local memory system for agents.
 
 ```text
 .ai-context/
@@ -303,6 +305,23 @@ When `get_context("task")` or `cram task "task"` runs, cram:
 
 The goal is not to prevent the agent from reading files. The goal is to reduce blind
 re-discovery and preload durable project knowledge.
+
+---
+
+## Concurrency and team
+
+These are two different things; cram supports one today and not the other.
+
+- **Concurrent agents on one repo — supported now.** Each `get_context("task")` / `cram task`
+  call writes its own slot file under `.ai-context/tasks/<task>.md`, so multiple agents working
+  the same repo at once never overwrite each other's task context. The shared files
+  (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.md`) are read-mostly and committed,
+  so teammates get the same context layer through normal version control.
+- **Hosted, multi-developer "team" features — not built yet.** Shared dashboards and
+  cross-developer audit rollups may come later around the open core. Today cram runs on a
+  single developer's machine.
+
+In short: concurrent agents, yes; centralized team analytics, not yet.
 
 ---
 
@@ -420,6 +439,10 @@ Claude Code login. Other agent runners can be added behind the same corpus/oracl
 The audit path is local and does not call a model. The context layer does call a configured
 context model to generate `ARCHITECTURE.md`, mine decisions, and select files for a task.
 
+**Subscription or API key?** If you have a Claude or Codex subscription, cram uses your
+existing CLI login (`claude` / `codex`) — no API key required. API keys are only needed for
+the direct-API providers (Anthropic/OpenAI/Gemini) or hosted gateways below.
+
 Auto-discovery currently checks:
 
 - Claude CLI
@@ -478,7 +501,17 @@ and `cram task` can send repo summaries or code excerpts to your configured cont
 ## Context health
 
 Context can go stale. cram tracks this with a 0-10 staleness score based on commits since the
-generated context was last refreshed.
+generated context was last refreshed, mapped to a band:
+
+| Score | Band | Meaning |
+|---:|---|---|
+| 0-2 | fresh | context tracks the code |
+| 3-5 | acceptable | minor drift |
+| 6-7 | stale | refresh recommended (`cram sync`) |
+| 8-10 | critical | likely misleading; refresh before relying on it |
+
+Only commits that change repo *structure* count against `ARCHITECTURE.md`: a content-only
+commit leaves it fresh by design, so the score does not creep on every commit.
 
 ```bash
 cram status
@@ -497,7 +530,7 @@ Soft budgets warn but do not truncate:
 | File | Default budget | Override |
 |---|---:|---|
 | `ARCHITECTURE.md` | 3,000 tok | `CRAM_BUDGET_ARCHITECTURE` |
-| `DECISIONS.md` | 1,500 tok | `CRAM_BUDGET_DECISIONS` |
+| `DECISIONS.md` | 1,800 tok | `CRAM_BUDGET_DECISIONS` |
 | `GOTCHAS.md` | 800 tok | `CRAM_BUDGET_GOTCHAS` |
 | `CURRENT_TASK.md` | 2,000 tok | `CRAM_BUDGET_TASK` |
 | `SYMBOLS.md` | none | scales with repo size |
@@ -528,12 +561,15 @@ history, and common actions. It opens on the audit view because the number is th
 | `cram task "..."` | Build task context |
 | `cram add <file>` | Add a file to current task context |
 | `cram sync` | Refresh generated context |
+| `cram continue` | Extend the task grace period before a commit resets context |
 | `cram status` | Check freshness and budgets |
 | `cram decide "..."` | Add a decision |
 | `cram gotcha "..."` | Add a gotcha |
 | `cram decisions --mine` | Mine git history for decision candidates |
+| `cram benchmark` | Estimate token savings vs full-repo auto-indexing |
 | `cram rig ...` | Verify optimizers |
 | `cram mcp` | Start the MCP server |
+| `cram hook install\|uninstall` | Manage the git post-commit sync hook |
 | `cram ui` | Open the TUI |
 | `cram doctor` | Check setup |
 
@@ -556,7 +592,7 @@ history, and common actions. It opens on the audit view because the number is th
 | `CRAM_TASK_GRACE_SECONDS` | `600` | Grace period before commit resets task context |
 | `CRAM_STALE_CRITICAL_COMMITS` | `10` | Commits that map to critical staleness |
 | `CRAM_BUDGET_ARCHITECTURE` | `3000` | Soft token budget |
-| `CRAM_BUDGET_DECISIONS` | `1500` | Soft token budget |
+| `CRAM_BUDGET_DECISIONS` | `1800` | Soft token budget |
 | `CRAM_BUDGET_GOTCHAS` | `800` | Soft token budget |
 | `CRAM_BUDGET_TASK` | `2000` | Soft token budget |
 
@@ -596,6 +632,7 @@ Audit-metric changes should be additive and clearly labeled as measured or estim
 
 Apache-2.0. See [LICENSE](LICENSE).
 
-cram is open source and local-first. The local single-user audit workflow, event store,
-audit CLI/TUI, findings, context layer, and markdown reports are open source. Hosted or team
-features may be offered later around the open core.
+cram is open source and local-first. The local single-developer workflow — audit, event
+store, audit CLI/TUI, findings, context layer, and markdown reports — is open source. Hosted,
+multi-developer team features may be offered later around the open core. (Concurrent agents on
+one repo are supported today; see [Concurrency and team](#concurrency-and-team).)

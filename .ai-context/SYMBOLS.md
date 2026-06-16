@@ -18,7 +18,7 @@ cram/hooks.py: install_global_claude_md, uninstall_global_claude_md, install_com
 cram/init.py: scan_structure, generate_architecture_md, write_gitignore, write_ci_action, init_repo, main
 cram/mcp_server.py: get_context, get_architecture, get_symbols, get_decisions, propose_decision, get_gotchas, get_health, add_file, run_benchmark, get_task_history, main
 cram/recommend.py: Optimizer, waste_class_for, recommend_for, attach_recommendations
-cram/rig.py: Task, load_corpus, Availability, ProviderAdapter, BaselineAdapter, CramAdapter, HeadroomAdapter, ContextModeAdapter, ClaudeContextAdapter, get_provider, Runner, LiveRunner, MockRunner, Oracle, CommandOracle, effective_tokens, optimizer_active, observe_optimizer, render_observation, RunResult, run_rig, summarize, render_summary, main
+cram/rig.py: Task, load_corpus, Availability, ProviderAdapter, BaselineAdapter, CramAdapter, HeadroomAdapter, ContextModeAdapter, ClaudeContextAdapter, get_provider, Runner, LiveRunner, CodexRunner, MockRunner, Oracle, CommandOracle, effective_tokens, optimizer_active, observe_optimizer, render_observation, RunResult, run_rig, summarize, render_summary, main
 cram/session.py: save_session, set_last_slot, get_last_slot, archive_task, load_session, touch_session, session_age, session_within_grace, clear_session
 cram/status.py: staleness_score, staleness_band, get_status_dict, show_status, main
 cram/suggest.py: suggest_task
@@ -48,7 +48,7 @@ tests/test_hooks.py: TestInstallCommitMsgHook, TestInstallHookInstallsBoth, Test
 tests/test_init.py: TestIsExcludedFile, TestScanStructure, TestWriteGitignore, TestInitRepo
 tests/test_mcp_server.py: repo, TestGetArchitectureDeterminism, TestGetDecisionsDeterminism, TestGetSymbolsDeterminism, TestGetContextDeterminism, TestGetHealthDeterminism, TestTaskSlotNamespacing, TestUsageLog, TestProposeDecision, TestSlotCoherence, TestArchiveTask, TestInitGuard
 tests/test_recommend.py: TestRegistryIntegrity, TestLookups, TestDetectors, TestAttach, TestDeriveFindingsCarriesRecommendations
-tests/test_rig.py: TestCorpus, TestProviders, TestCommandOracle, TestEffectiveTokens, TestRunRig, TestLiveRunner, TestClaudeContextAdapter, TestDetector, TestObserve
+tests/test_rig.py: TestCorpus, TestProviders, TestCommandOracle, TestEffectiveTokens, TestRunRig, TestLiveRunner, TestCodexRunner, TestClaudeContextAdapter, TestDetector, TestObserve
 tests/test_rig_fixtures.py: mean, median, main, test_corpus_loads_and_fixtures_exist, test_solver_passes_the_oracle, test_noop_fails_the_oracle_because_fixtures_ship_red, test_summary_separates_solver_from_noop
 tests/test_status.py: TestStalenessScore, TestStalenessBand, TestGetStatusDictBackCompat, git_repo, TestGetStatusDictIntegration, TestStructureHashFreshness
 tests/test_symbols.py: TestByteStability

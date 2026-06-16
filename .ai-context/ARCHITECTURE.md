@@ -1,7 +1,7 @@
 # Architecture
 
 ## Overview
-cram-ai is a profiler and referee for AI coding-agent tokens. It audits agent sessions from real transcripts to show where tokens go (pre-edit context share, context bloat, retry loops), provides evidence-backed fixes, and verifies whether any optimization actually reduces token use at fixed task success. It also initializes project configuration, maintains Claude-specific settings, and provides a context layer for zero-key integration workflows.
+cram-ai is a profiler and referee for AI coding-agent tokens. It audits agent sessions from real transcripts to show where tokens go (pre-edit context share, context bloat, retry loops), provides evidence-backed fixes, and verifies whether any optimization actually reduces token use at fixed task success. It also initializes project configuration, maintains Claude-specific settings, and provides an optional repo-local context layer for zero-key integration workflows when audits show repeated re-discovery.
 
 ## Directory Structure
 
@@ -66,12 +66,12 @@ Test suite for the package functionality
 
 - **Profiler**: Audit AI agent sessions from transcripts; measure pre-edit context share, context bloat, retry loops, and oversized tool results
 - **Referee**: Verify whether any optimization (cram's or third-party) reduces tokens at fixed task success; controlled or observational A/B over real sessions
-- Context extraction from arbitrary codebases with identifier-focused excerpts
+- Optional context extraction from arbitrary codebases with identifier-focused excerpts
 - Project initialization with templated configuration and ARCHITECTURE.md generation
 - Context synchronization across backends with automated git hooks
 - **Output protection by default**: Command outputs byte-capped to prevent token waste
 - Repository status monitoring (file freshness, sync state, token budgets)
-- Claude integration via MCP server without API key management
+- Claude and Codex CLI integration via existing subscription login; direct API providers require keys
 - Task slot namespacing for concurrent agent invocations
 - **Architectural decision tracking**: Record and mine decisions from git history
 - **Gotcha documentation**: Maintain repository-specific non-obvious traps and workarounds
@@ -80,6 +80,7 @@ Test suite for the package functionality
 - **Agentic testing framework (cram rig)**: Verify optimizer correctness via task corpus, fixture execution, and oracle validation
 - **Interactive TUI dashboard** (5 tabs): Decisions, Sessions, Health, History, Actions; auto-refresh every 30s
 - **Structure-hash deduplication**: Skip ARCHITECTURE.md LLM regeneration when repo structure is unchanged
+- **Staleness bands**: Map freshness scores to fresh, acceptable, stale, and critical; ARCHITECTURE.md staleness only advances on structure-changing commits
 - Task history archiving (per-session task invocations with timestamps)
 - Multi-provider LLM support (Claude CLI / Ollama / OpenAI-compat / Gemini) with configurable timeouts
 
@@ -124,7 +125,9 @@ CLI commands dispatched through unified `cram` entry point:
 
 ## Concurrency Model
 
-cram is designed for **one developer, one repo checkout**. Task slot namespacing (`.ai-context/tasks/`) protects against concurrent MCP calls within a single server process, allowing multiple agents to invoke `get_context()` in parallel without collision.
+cram supports concurrent agents working in one repo checkout. Each `get_context("task")` or `cram task` call writes an isolated slot file under `.ai-context/tasks/<task>.md`, so simultaneous agents do not overwrite each other's active task context.
+
+Shared context files (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.md`) are read-mostly and committed through normal version control. cram does not currently provide hosted multi-developer team dashboards or cross-developer audit rollups; it runs on a single developer's machine.
 
 ## Dependencies
 

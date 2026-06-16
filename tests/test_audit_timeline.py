@@ -196,3 +196,65 @@ class TestRunSessionCLI:
         parsed = json.loads(capsys.readouterr().out)
         assert parsed['requests'] == 1
         assert parsed['rows'][0]['context'] == 5_000
+
+    # ── Codex resolver ────────────────────────────────────────────────────────
+
+    def _write_codex_session(self, sd, name, repo):
+        """Write a minimal Codex JSONL file under a date-tree path."""
+        dated = sd / '2026' / '06' / '16'
+        dated.mkdir(parents=True, exist_ok=True)
+        path = dated / name
+        path.write_text(
+            json.dumps({'type': 'session_meta', 'payload': {'cwd': repo}}) + '\n'
+        )
+        return path
+
+    def test_resolve_codex_by_uuid_prefix(self, tmp_path, monkeypatch):
+        import cram.audit as _audit_mod
+        repo = str(tmp_path / 'repo')
+        sd = tmp_path / 'codex_sessions'
+        uuid = '019ece4f-5b3f-7e80-bd46-5cc7f20fac4f'
+        fname = f'rollout-2026-06-16T21-00-00-{uuid}.jsonl'
+        self._write_codex_session(sd, fname, repo)
+        monkeypatch.setattr(_audit_mod, '_project_transcript_dir', lambda r: None)
+        monkeypatch.setattr(_audit_mod, '_codex_sessions_dir', lambda: str(sd))
+        # prefix match on UUID
+        result = _resolve_session_path('019ece4f', repo)
+        assert result is not None and result.endswith(fname)
+
+    def test_resolve_codex_full_uuid(self, tmp_path, monkeypatch):
+        import cram.audit as _audit_mod
+        repo = str(tmp_path / 'repo')
+        sd = tmp_path / 'codex_sessions'
+        uuid = '019ece4f-5b3f-7e80-bd46-5cc7f20fac4f'
+        fname = f'rollout-2026-06-16T21-00-00-{uuid}.jsonl'
+        self._write_codex_session(sd, fname, repo)
+        monkeypatch.setattr(_audit_mod, '_project_transcript_dir', lambda r: None)
+        monkeypatch.setattr(_audit_mod, '_codex_sessions_dir', lambda: str(sd))
+        result = _resolve_session_path(uuid, repo)
+        assert result is not None and result.endswith(fname)
+
+    def test_resolve_codex_miss_returns_none(self, tmp_path, monkeypatch):
+        import cram.audit as _audit_mod
+        sd = tmp_path / 'codex_sessions'
+        sd.mkdir()
+        monkeypatch.setattr(_audit_mod, '_project_transcript_dir', lambda r: None)
+        monkeypatch.setattr(_audit_mod, '_codex_sessions_dir', lambda: str(sd))
+        assert _resolve_session_path('deadbeef', str(tmp_path)) is None
+
+    def test_claude_takes_priority_over_codex(self, tmp_path, monkeypatch):
+        """If both Claude and Codex have a match, Claude's per-repo dir wins."""
+        import cram.audit as _audit_mod
+        repo = str(tmp_path / 'repo')
+        # Claude match
+        td = tmp_path / 'claude_proj'
+        td.mkdir()
+        claude_path = td / 'abc-shared-prefix.jsonl'
+        claude_path.write_text(json.dumps(_usage(cache_read=1)) + '\n')
+        # Codex match with same prefix
+        sd = tmp_path / 'codex_sessions'
+        self._write_codex_session(sd, 'rollout-2026-abc-shared-00000000-0000-0000-0000-000000000000.jsonl', repo)
+        monkeypatch.setattr(_audit_mod, '_project_transcript_dir', lambda r, d=str(td): d)
+        monkeypatch.setattr(_audit_mod, '_codex_sessions_dir', lambda: str(sd))
+        result = _resolve_session_path('abc-shared', repo)
+        assert result == str(claude_path)

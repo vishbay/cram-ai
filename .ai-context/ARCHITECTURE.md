@@ -1,7 +1,7 @@
 # Architecture
 
 ## Overview
-cram-ai is a profiler and referee for AI coding-agent tokens. It audits agent sessions from real transcripts to show where tokens go (pre-edit context share, context bloat, retry loops), provides evidence-backed fixes, and verifies whether any optimization actually reduces token use at fixed task success. It also initializes project configuration, maintains Claude-specific settings, and provides an optional repo-local context layer for zero-key integration workflows when audits show repeated re-discovery.
+cram-ai is a profiler and referee for AI coding-agent tokens. It audits agent sessions from real transcripts to show where tokens go (pre-edit context share, context bloat, retry loops), provides evidence-backed fixes, drills into concrete contributors for each waste class, and verifies whether any optimization actually reduces token use at fixed task success. It also initializes project configuration, maintains Claude-specific settings, and provides an optional repo-local context layer for zero-key integration workflows when audits show repeated re-discovery.
 
 ## Directory Structure
 
@@ -18,7 +18,7 @@ Core Python package containing main functionality:
 - `session.py` - Session state management: task archiving, slot tracking, grace period handling
 - `targets.py` - Target-specific output generation with byte-cap command protection rules
 - `symbols.py` - Public identifier extraction for SYMBOLS.md
-- `audit.py` - Measures orientation tax (reads vs. edits) from Claude Code transcripts; dispatches to audit subsystem
+- `audit.py` - Measures orientation tax (reads vs. edits) from Claude/Cursor/Codex transcripts; dispatches to audit subsystem; provides per-session and per-layer drilldowns
 - `audit_events.py` - Parse Claude/Cursor/Codex transcripts into typed events and per-session metadata
 - `audit_findings.py` - Analyze audit data, derive context-mode findings and recommendations
 - `audit_report.py` - Render audit findings, waste attribution, and timeline reports
@@ -39,7 +39,7 @@ Core Python package containing main functionality:
 - `examples/rig/` - Example task corpus and pre-made fixtures for cram rig testing
 
 ### `tests/`
-Test suite for the package functionality
+Test suite for the package functionality, including audit aggregate/report coverage and layer drilldown tests.
 
 ## Key Files
 
@@ -65,6 +65,7 @@ Test suite for the package functionality
 ## Primary Features
 
 - **Profiler**: Audit AI agent sessions from transcripts; measure pre-edit context share, context bloat, retry loops, and oversized tool results
+- **Layer drilldown**: Expand one waste class into ranked concrete contributors with `cram audit --layer`; supports orientation, repeated, redundant, carried, retries, and churn
 - **Referee**: Verify whether any optimization (cram's or third-party) reduces tokens at fixed task success; controlled or observational A/B over real sessions
 - Optional context extraction from arbitrary codebases with identifier-focused excerpts
 - Project initialization with templated configuration and ARCHITECTURE.md generation
@@ -98,7 +99,7 @@ CLI commands dispatched through unified `cram` entry point:
 - `cram decide "<statement>"` - Append architectural decision to DECISIONS.md
 - `cram decisions [--mine] [--days N]` - Show or mine decisions from git history
 - `cram gotcha "<trap>"` - Append non-obvious trap to GOTCHAS.md
-- `cram audit [--days N] [--all] [--session]` - Measure orientation tax from Claude Code transcripts; per-session breakdown with context-mode detection
+- `cram audit [--days N] [--all] [--session] [--layer NAME]` - Measure orientation tax from Claude/Cursor/Codex transcripts; per-session breakdown and per-layer contributor drilldown
 - `cram benchmark [--days N]` - Show token savings vs full-repo auto-indexing
 - `cram rig <corpus-path> [--observe]` - Run task fixtures against agentic optimizer; verify correctness and cost
 - `cram doctor [path]` - Check setup: models, hooks, git, context files
@@ -138,4 +139,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 381e424238a5a90fb9470a46d33b1b78ca9c10c478a4e46e24f4c79f4de45d71 -->
+<!-- cram:structure-hash 093f64d1691be786ed490db8399f6e3cb6acc9bef4b41efeae42be5d6c3c7afc -->

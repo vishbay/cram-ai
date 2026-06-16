@@ -48,7 +48,8 @@ Test suite for the package functionality
 | `pyproject.toml` | Python package metadata and build configuration |
 | `setup.py` | setuptools shim for pip compatibility |
 | `requirements.txt` | Python dependencies |
-| `CASE_STUDY_RUNBOOK.md` | Reproducible runbook for GitHub-issues case study; demonstrates profiler (where tokens go) and referee (whether fixes work) |
+| `CASE_STUDY.md` | Real-world case study demonstrating profiler (token measurement) and referee (before/after verification) on GitHub issues |
+| `CASE_STUDY_RUNBOOK.md` | Reproducible runbook for case study; demonstrates profiler and referee methodology |
 | `PROJECT_CONTEXT.md` | Project goals and context documentation |
 | `PLAN_CARRIED_OUTPUT.md` | Carried-output optimization loop design (advisory-tightening phase) |
 
@@ -134,4 +135,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash d93da3112f35050ee49235586dc3dd807764499ad77043dbc01d347df16bf2f9 -->
+<!-- cram:structure-hash 381e424238a5a90fb9470a46d33b1b78ca9c10c478a4e46e24f4c79f4de45d71 -->

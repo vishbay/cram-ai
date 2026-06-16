@@ -43,6 +43,28 @@ cram gives that waste a profile.
 
 ---
 
+## How cram is different
+
+General LLM observability tools show traces, latency, request cost, and app-level quality
+signals. cram is narrower: it profiles coding-agent work loops from local transcripts and
+explains why an agent spent tokens before making useful progress.
+
+It speaks in developer-native waste classes:
+
+- startup context
+- orientation before first edit
+- repeated file reads
+- oversized tool output carried forward
+- retry loops and failed commands
+- same-file edit churn
+- cache blind spots
+- optimizer-on vs optimizer-off
+
+The goal is not only "what did this cost?" It is "why did the agent spend that much, what
+would reduce it, and did that fix preserve task success?"
+
+---
+
 ## What it does
 
 **1. Profiles real agent transcripts**

@@ -567,6 +567,40 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     measured_pool = [s for s in all_sessions if s.get('input_tokens', 0) > 0]
     leaderboard = sorted(measured_pool, key=lambda s: s['input_tokens'], reverse=True)[:10]
 
+    # Cost by waste layer — the overlapping diagnostics (NOT the spine partition).
+    # These do not sum to effective input: orientation pre-edit cache reads are
+    # already inside the spine's "cache read", etc. Each row carries its own
+    # basis so the report never implies fake precision:
+    #   measured   — derived from measured tokens × price
+    #   estimated  — modelled with the assumed tokens/file read
+    #   count      — a frequency we trust but do not dollar-cost
+    carried_eff_per_session = (
+        sum(s['carried_read_tokens'] for s in all_sessions) / total * CACHE_READ_MULT)
+    redundant_eff_per_session = avg_redundant_reads * AUDIT_TOK_PER_FILE
+    layer_costs = [
+        {'layer': 'orientation', 'basis': 'measured',
+         'eff_tokens_per_session': pre_edit_spend_eff_tokens,
+         'cost_per_session': pre_edit_spend_cost,
+         'note': 'pre-edit input-side spend (measured edit sessions)'},
+        {'layer': 'carried', 'basis': 'measured',
+         'eff_tokens_per_session': carried_eff_per_session,
+         'cost_per_session': carried_cost_per_session,
+         'note': 'oversized results re-read every later turn'},
+        {'layer': 'redundant', 'basis': 'estimated',
+         'eff_tokens_per_session': redundant_eff_per_session,
+         'cost_per_session': redundant_eff_per_session * AUDIT_BASE_PRICE,
+         'note': 'same-file re-reads × assumed tokens/file'},
+        {'layer': 'retries', 'basis': 'count',
+         'count_per_session': avg_error_results,
+         'note': 'failed tool calls — not dollar-costed'},
+        {'layer': 'churn', 'basis': 'count',
+         'count_per_session': avg_edit_churn,
+         'note': 'same-file re-edits — not dollar-costed'},
+    ]
+    # Rank dollar-costed layers first (by $/session desc), count-only last.
+    layer_costs.sort(key=lambda r: (r['basis'] == 'count',
+                                    -(r.get('cost_per_session') or 0)))
+
     # Neutral-auditor view: split on whether a context tool was active. Only
     # meaningful when the pool actually contains both — otherwise it's noise.
     cm_on  = [s for s in all_sessions if s.get('context_mode')]
@@ -625,8 +659,11 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'weekly':                    weekly,
         'recent':                    recent,
         'leaderboard':               leaderboard,
+        'measured_pool_sessions':    len(measured_pool),
+        'layer_costs':               layer_costs,
         'token_spine':               token_spine,
         'spine_tree':                spine_tree,
+        'base_price':                AUDIT_BASE_PRICE,
         # Live transcripts whose parse failed this run; their sessions are
         # missing from every number above.
         'parse_failures':            len(store.run_failures),

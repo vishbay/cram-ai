@@ -122,8 +122,58 @@ def _headline(data: dict) -> str:
     </section>"""
 
 
+def _coverage(data: dict) -> str:
+    """Measurement coverage + confidence — so a thin report can't be over-trusted."""
+    total = data['sessions']
+    measured = data.get('measured_pool_sessions', 0)
+    edit_meas = data.get('pre_edit_measured_sessions', 0)
+    read_only = data.get('read_only_sessions', 0)
+    failures = data.get('parse_failures', 0)
+
+    # source mix from the per-source summaries: (src, n, ...)
+    mix = []
+    for row in (data.get('projects') or []):
+        src, n = row[0], row[1]
+        label = src if src in ('cursor', 'codex') else 'claude'
+        mix.append(f'{label} {n}')
+    mix_str = ' · '.join(mix) if mix else 'claude'
+
+    def cell(val, label, warn=False):
+        cls = ' warn' if warn else ''
+        return (f'<div class="cov-cell{cls}"><div class="cov-val">{_esc(val)}</div>'
+                f'<div class="cov-label">{_esc(label)}</div></div>')
+
+    thin = total < 5
+    cells = [
+        cell(total, 'sessions found', warn=thin),
+        cell(measured, 'with token usage'),
+        cell(edit_meas, 'edit sessions measured', warn=(edit_meas < 5 and edit_meas > 0)),
+        cell(read_only, 'read-only excluded'),
+        cell(failures, 'parse failures', warn=(failures > 0)),
+        cell(mix_str, 'source mix'),
+    ]
+    thin_note = ('<div class="cov-note warn-text">⚠ Small sample — fewer than 5 '
+                 'sessions. Treat shares as directional, not conclusive.</div>'
+                 if thin else '')
+    return f"""
+    <section class="section" id="coverage">
+      <div class="section-label">Coverage &amp; confidence</div>
+      <div class="cov-grid">{''.join(cells)}</div>
+      {thin_note}
+      <div class="cov-legend">
+        <span><span class="dot measured"></span> <b>measured</b> — from token counts in the transcripts</span>
+        <span><span class="dot estimated"></span> <b>estimated</b> — modelled (assumed tokens/file); not a measurement</span>
+        <span><span class="dot count"></span> <b>count</b> — a frequency we trust but do not dollar-cost</span>
+      </div>
+      <div class="cov-note">Input-side spend is shown throughout. Output-token
+        spend is reported separately (see metrics) and is <b>not</b> included in
+        the waterfall or the waste-layer cost model. Cursor sessions carry file
+        paths but no token data.</div>
+    </section>"""
+
+
 def _wf_row(level: int, glyph: str, label: str, pct_of_total: float,
-            eff: float, fill_var: str, fill_label: str) -> str:
+            eff: float, fill_var: str, fill_label: str, cost: str = '') -> str:
     width = max(0.0, min(100.0, pct_of_total * 100))
     return f"""
         <div class="wf-row level-{level}">
@@ -131,6 +181,7 @@ def _wf_row(level: int, glyph: str, label: str, pct_of_total: float,
           <div class="wf-track"><div class="wf-fill" style="width:{width:.2f}%; background:{fill_var};">{_esc(fill_label)}</div></div>
           <div class="wf-tok">{eff:,.0f}</div>
           <div class="wf-pct">{width:.0f}%</div>
+          <div class="wf-cost">{_esc(cost)}</div>
         </div>"""
 
 
@@ -141,9 +192,11 @@ def _waterfall(data: dict) -> str:
     if not tree and spine_total <= 0:
         return ''
 
+    base_price = data.get('base_price') or _BASE_PRICE
     rows = []
     if tree:
         total = tree['total']
+        pool = tree['pool_sessions'] or 1
         comps = sorted(tree['components'], key=lambda c: c['eff'], reverse=True)
         # total bar: gradient across components in display order
         stops, cum = [], 0.0
@@ -160,6 +213,7 @@ def _waterfall(data: dict) -> str:
           <div class="wf-track"><div class="wf-fill" style="width:100%; background:{grad};"></div></div>
           <div class="wf-tok">{total:,.0f}</div>
           <div class="wf-pct">100%</div>
+          <div class="wf-cost">~${total * base_price / pool:.3f}/s</div>
         </div>
         <div class="wf-sep"></div>""")
 
@@ -169,7 +223,8 @@ def _waterfall(data: dict) -> str:
             pct = (c['eff'] / total) if total else 0
             glyph = '└─' if last_comp else '├─'
             rows.append(_wf_row(1, glyph, c['label'], pct, c['eff'],
-                                f'var(--{cls[0]})', f'{pct * 100:.0f}%'))
+                                f'var(--{cls[0]})', f'{pct * 100:.0f}%',
+                                cost=f'~${c["eff"] * base_price / pool:.3f}/s'))
             # pre/post-edit split — only when the component carries it (cache
             # write has no pre/post in the model, so skip the sub-rows there).
             if c['label'] != 'cache write' and c['eff'] > 0:
@@ -196,12 +251,14 @@ def _waterfall(data: dict) -> str:
             var = _COMP_VAR.get(label, 'var(--wf-cr)')
             stops.append(f'{var} {cum:.2f}%'); cum += w; stops.append(f'{var} {cum:.2f}%')
         grad = f'linear-gradient(90deg, {", ".join(stops)})'
+        n_all = max(1, data['sessions'])
         rows.append(f"""
         <div class="wf-row level-0">
           <div class="wf-lbl root"><span class="wf-tree-icon">●</span>eff input</div>
           <div class="wf-track"><div class="wf-fill" style="width:100%; background:{grad};"></div></div>
           <div class="wf-tok">{total:,.0f}</div>
           <div class="wf-pct">100%</div>
+          <div class="wf-cost">~${total * base_price / n_all:.3f}/s</div>
         </div>
         <div class="wf-sep"></div>""")
         for i, (label, val) in enumerate(comps):
@@ -209,23 +266,15 @@ def _waterfall(data: dict) -> str:
             pct = (val / total) if total else 0
             glyph = '└─' if i == len(comps) - 1 else '├─'
             rows.append(_wf_row(1, glyph, label, pct, val,
-                                f'var(--{cls[0]})', f'{pct * 100:.0f}%'))
+                                f'var(--{cls[0]})', f'{pct * 100:.0f}%',
+                                cost=f'~${val * base_price / n_all:.3f}/s'))
         note = 'all sessions · composition only (no measured edit pool for pre/post)'
-
-    # estimated overlays strip
-    overlays = []
-    overlays.append(f'orientation reads ~${data["orient_cost_per_session"]:.4f}/session')
-    if data.get('sessions_with_big_results'):
-        overlays.append(f'carried output ~${data["carried_cost_per_session"]:.4f}/session')
-    if data.get('avg_redundant_reads', 0) >= 0.5:
-        overlays.append(f'redundant reads {data["avg_redundant_reads"]:.1f}/session')
 
     return f"""
     <section class="section" id="waterfall">
       <div class="section-label">Token waterfall — measured spine</div>
-      <div class="wf-note">{_esc(note)}</div>
+      <div class="wf-note">{_esc(note)} · $/session at {_esc(data['provider'])} input pricing</div>
       <div class="wf-tree">{''.join(rows)}</div>
-      <div class="wf-overlays"><strong>Estimated overlays</strong> — modelled, not additive to the spine: &nbsp;{' &nbsp;·&nbsp; '.join(_esc(o) for o in overlays)}</div>
     </section>"""
 
 
@@ -350,8 +399,50 @@ def _layers(data: dict, layers: dict, repo_root: str) -> str:
     return f"""
     <section class="section" id="layers">
       <div class="section-label">Waste layers</div>
+      {_cost_by_layer(data)}
+      <div class="layers-sub">Diagnostics &amp; top contributors</div>
       <div class="layers">{''.join(rows_html)}</div>
     </section>"""
+
+
+def _cost_by_layer(data: dict) -> str:
+    """Dollar/token-ranked waste layers. These OVERLAP and do NOT sum to the
+    spine — orientation pre-edit cache reads are already inside 'cache read', etc."""
+    costs = data.get('layer_costs') or []
+    if not costs:
+        return ''
+    rows = []
+    for r in costs:
+        basis = r['basis']
+        dot = {'measured': 'measured', 'estimated': 'estimated', 'count': 'count'}[basis]
+        if basis == 'count':
+            cps = r.get('count_per_session') or 0
+            tok_cell = '<span class="dim">—</span>'
+            cost_cell = f'{cps:.1f}/session <span class="dim">(count)</span>'
+        else:
+            eff = r.get('eff_tokens_per_session')
+            cost = r.get('cost_per_session')
+            tok_cell = f'{eff:,.0f}' if eff else '<span class="dim">—</span>'
+            cost_cell = f'~${cost:.4f}' if cost is not None else '<span class="dim">—</span>'
+        rows.append(f"""
+          <tr>
+            <td class="mono">{_esc(r['layer'])}</td>
+            <td class="num">{tok_cell}</td>
+            <td class="num">{cost_cell}</td>
+            <td><span class="basis-badge {basis}"><span class="dot {dot}"></span>{_esc(basis)}</span></td>
+            <td class="dim">{_esc(r.get('note', ''))}</td>
+          </tr>""")
+    return f"""
+      <table class="cost-table">
+        <thead><tr>
+          <th>Layer</th><th class="r">Eff tok/session</th><th class="r">$/session</th>
+          <th>Basis</th><th>Notes</th>
+        </tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table>
+      <div class="cov-note">These layers <b>overlap</b> and do not sum to effective
+        input — they're a diagnostic lens, not a partition. The spine waterfall
+        above is the exhaustive partition.</div>"""
 
 
 def _metric(val: str, label: str, basis: str, cls: str = '') -> str:
@@ -414,6 +505,7 @@ def render_report_html(data: dict, layers: dict, repo_root: str) -> str:
 
     body = ''.join([
         _headline(data),
+        _coverage(data),
         _waterfall(data),
         _findings(data),
         _leaderboard(data),
@@ -465,8 +557,10 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .tag.hi{border-color:var(--accent-bd);color:var(--accent);background:var(--accent-lo)}
 .wf-note{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px}
 .wf-tree{display:flex;flex-direction:column;gap:5px;font-family:var(--mono)}
-.wf-row{display:grid;grid-template-columns:130px 1fr 90px 56px;align-items:center;gap:12px;font-size:12px}
+.wf-row{display:grid;grid-template-columns:130px 1fr 90px 44px 84px;align-items:center;gap:12px;font-size:12px}
 .wf-row.level-1{padding-left:16px}.wf-row.level-2{padding-left:32px}
+.wf-cost{color:var(--muted);text-align:right;font-size:11px}
+.wf-row.level-0 .wf-cost{color:var(--heading)}
 .wf-lbl{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
 .wf-lbl.root{color:var(--heading);font-weight:600}
 .wf-tree-icon{color:var(--border);flex-shrink:0;white-space:pre}
@@ -477,8 +571,25 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .wf-tok{color:var(--text);text-align:right}.wf-pct{color:var(--muted);text-align:right}
 .wf-row.level-0 .wf-tok{color:var(--heading);font-weight:600}
 .wf-sep{height:8px}
-.wf-overlays{margin-top:16px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);font-size:12px;color:var(--muted)}
-.wf-overlays strong{color:var(--text)}
+.cov-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.cov-cell{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.cov-cell.warn{border-color:var(--yellow)}
+.cov-val{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--heading)}
+.cov-label{font-size:10.5px;color:var(--muted);margin-top:3px}
+.cov-legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;font-size:11.5px;color:var(--muted)}
+.cov-legend b{color:var(--text);font-weight:600}
+.cov-note{margin-top:12px;font-size:11.5px;color:var(--muted);line-height:1.5}
+.cov-note b{color:var(--text)}
+.warn-text{color:var(--yellow)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin-right:2px}
+.dot.measured{background:var(--green)}.dot.estimated{background:var(--yellow)}.dot.count{background:var(--muted)}
+.cost-table{margin-bottom:14px}
+.cost-table td{padding:8px 10px}
+.basis-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--muted)}
+.basis-badge.measured{border-color:rgba(52,211,153,.25)}
+.basis-badge.estimated{border-color:rgba(251,191,36,.3)}
+.layers-sub{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 10px}
+.dim{color:var(--muted)}
 .finding{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden;margin-bottom:8px;box-shadow:var(--shadow)}
 .finding-head{padding:14px 18px 12px;display:flex;align-items:flex-start;gap:12px}
 .finding-id{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-lo);border:1px solid var(--accent-bd);padding:2px 8px;border-radius:4px;flex-shrink:0;margin-top:1px}
@@ -534,13 +645,15 @@ td{padding:9px 10px;vertical-align:middle}td:first-child{padding-left:0}
 .sidebar-link.active{border-bottom-color:var(--accent);border-left-color:transparent;background:none}
 .main{grid-column:1;grid-row:3;padding:28px 20px 60px}
 .metrics{grid-template-columns:repeat(2,1fr)}
+.cov-grid{grid-template-columns:repeat(3,1fr)}
 .headline-grid{grid-template-columns:1fr;gap:16px}.hl-stat{font-size:40px}
-.wf-row{grid-template-columns:110px 1fr 80px 48px;gap:8px;font-size:11px}
+.wf-row{grid-template-columns:104px 1fr 78px 44px 76px;gap:8px;font-size:11px}
 .layer-row{grid-template-columns:90px 1fr 3fr 110px}
 }
 @media(max-width:600px){
 .header-meta{display:none}
-.wf-row{grid-template-columns:90px 1fr 70px}.wf-pct{display:none}
+.cov-grid{grid-template-columns:repeat(2,1fr)}
+.wf-row{grid-template-columns:84px 1fr 64px 70px}.wf-pct{display:none}
 .layer-row{grid-template-columns:90px 1fr 90px}.l-desc{display:none}
 .finding-actions{flex-direction:column}.finding-action{border-right:none;border-bottom:1px solid var(--border)}
 }
@@ -585,6 +698,7 @@ _SHELL = """<!DOCTYPE html>
   <nav class="sidebar">
     <div class="sidebar-label">Sections</div>
     <a href="#headline" class="sidebar-link active">Headline</a>
+    <a href="#coverage" class="sidebar-link">Coverage</a>
     <a href="#waterfall" class="sidebar-link">Token waterfall</a>
     <a href="#findings" class="sidebar-link">Findings</a>
     <a href="#leaderboard" class="sidebar-link">Leaderboard</a>

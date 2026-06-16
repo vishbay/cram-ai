@@ -40,9 +40,58 @@ class TestRenderReportHtml:
         repo = _rich_repo(tmp_path, monkeypatch)
         data = collect_audit(repo, days=365)
         html = render_report_html(data, _layers_for(repo), repo)
-        for anchor in ('id="headline"', 'id="waterfall"', 'id="findings"',
-                       'id="leaderboard"', 'id="layers"', 'id="metrics"'):
+        for anchor in ('id="headline"', 'id="coverage"', 'id="waterfall"',
+                       'id="findings"', 'id="leaderboard"', 'id="layers"',
+                       'id="metrics"'):
             assert anchor in html
+
+    def test_coverage_block(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        html = render_report_html(data, _layers_for(repo), repo)
+        assert 'Coverage' in html
+        assert 'with token usage' in html
+        assert 'parse failures' in html
+        assert 'source mix' in html
+        # measured/estimated/count legend
+        assert 'dot measured' in html and 'dot estimated' in html and 'dot count' in html
+        # output-token disclosure
+        assert 'Output-token' in html and 'not' in html
+
+    def test_thin_sample_warning(self, tmp_path, monkeypatch):
+        # 2 sessions → under the 5-session threshold → small-sample warning
+        _setup(tmp_path, monkeypatch, [
+            [_tool('Read', {'file_path': 'a.py'}), _usage(input_tokens=1000),
+             _tool('Edit', {'file_path': 'a.py'}), _usage(input_tokens=500)],
+        ])
+        repo = str(tmp_path)
+        data = collect_audit(repo, days=365)
+        html = render_report_html(data, _layers_for(repo), repo)
+        assert 'Small sample' in html
+
+    def test_cost_by_layer_table(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        html = render_report_html(data, _layers_for(repo), repo)
+        assert 'cost-table' in html
+        # measured layers carry $; count layers say (count)
+        assert 'basis-badge' in html
+        assert 'measured' in html and 'count' in html
+        # honesty note: layers overlap, do not sum
+        assert 'overlap' in html and 'not a partition' in html
+
+    def test_layer_costs_in_audit_data(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        lc = {r['layer']: r for r in data['layer_costs']}
+        assert set(lc) == {'orientation', 'carried', 'redundant', 'retries', 'churn'}
+        assert lc['orientation']['basis'] == 'measured'
+        assert lc['redundant']['basis'] == 'estimated'
+        assert lc['retries']['basis'] == 'count'
+        # dollar-costed layers rank before count-only layers
+        bases = [r['basis'] for r in data['layer_costs']]
+        assert bases.index('count') >= max(
+            i for i, b in enumerate(bases) if b != 'count')
 
     def test_headline_share_rendered(self, tmp_path, monkeypatch):
         repo = _rich_repo(tmp_path, monkeypatch)
@@ -59,7 +108,8 @@ class TestRenderReportHtml:
         assert 'wf-row level-0' in html        # total
         assert 'wf-row level-1' in html        # components
         assert 'wf-row level-2' in html        # pre/post split
-        assert 'Estimated overlays' in html
+        assert 'wf-cost' in html               # $/session per component
+        assert '/s' in html                    # cost annotation
 
     def test_waterfall_fallback_no_edit_sessions(self, tmp_path, monkeypatch):
         # read-only only → spine_tree is None → composition-only waterfall

@@ -21,11 +21,11 @@ never disagree about what a session cost.
 
 Status: the framework, the baseline + cram adapters, and the MockRunner are
 live and tested. The Headroom and context-mode adapters are stubs that report
-themselves unavailable (those tools aren't installable from here yet). The
-LiveRunner drives Claude Code headless (`claude -p`) and reuses your existing
-login — no API key needed; it just requires the `claude` CLI on PATH.
-`cram rig --dry-run` works today: it resolves the corpus × providers grid and
-reports availability without running.
+themselves unavailable (those tools aren't installable from here yet). The live
+runners drive either Claude Code headless (`claude -p`) or Codex noninteractive
+mode (`codex exec`) and reuse the user's existing login. `cram rig --dry-run`
+works today: it resolves the corpus × providers grid and reports availability
+without running.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from typing import Callable, Protocol, runtime_checkable
 
 from cram import audit_events
@@ -135,18 +136,53 @@ class CramAdapter:
     name = 'cram'
     detector = {'kind': 'mcp_tool', 'match': 'get_context'}
 
+    def __init__(self, target: str | None = None):
+        self.target = target
+
     def availability(self) -> Availability:
         if shutil.which('cram') is None:
             return Availability(False, 'cram CLI not on PATH')
         return Availability(True)
 
-    def setup(self, task: Task, workdir: str) -> dict:
+    def _write_existing_context(self, workdir: str) -> bool:
+        """Best-effort fallback: write already-generated context to a target file."""
+        if not self.target:
+            return False
+        from cram import targets as _targets
+        from cram.context_dir import context_path, has_context_dir
+
+        if not has_context_dir(workdir):
+            return False
+        task_path = context_path(workdir, 'CURRENT_TASK.md', warn=True)
+        arch_path = context_path(workdir, 'ARCHITECTURE.md', warn=True)
+        if not os.path.exists(task_path):
+            return False
         try:
-            subprocess.run(['cram', 'task', task.prompt], cwd=workdir,
-                           capture_output=True, timeout=120)
+            with open(task_path, errors='ignore') as f:
+                task_content = f.read()
+            with open(arch_path, errors='ignore') as f:
+                arch_content = f.read()
+            _targets.write_to_target(workdir, self.target, task_content, arch_content)
+            return True
+        except OSError:
+            return False
+
+    def setup(self, task: Task, workdir: str) -> dict:
+        cmd = ['cram', 'task', task.prompt]
+        if self.target:
+            cmd.extend(['--target', self.target])
+        fallback = False
+        try:
+            result = subprocess.run(cmd, cwd=workdir,
+                                    capture_output=True, timeout=120)
+            if result.returncode != 0:
+                fallback = self._write_existing_context(workdir)
         except Exception:
-            pass  # degrade to baseline context for this run
-        return {'CRAM_REPO': workdir}
+            fallback = self._write_existing_context(workdir)
+        setup = {'CRAM_REPO': workdir}
+        if fallback:
+            setup['CRAM_CONTEXT_FALLBACK'] = 'existing'
+        return setup
 
 
 class _StubAdapter:
@@ -285,6 +321,34 @@ def _newest_transcript_for(workdir: str) -> str | None:
     return max(files, key=os.path.getmtime) if files else None
 
 
+def _newest_codex_transcript_for(workdir: str, *, since: float = 0.0) -> str | None:
+    """Newest Codex transcript whose session cwd matches workdir, or None.
+
+    Codex stores sessions globally under ~/.codex/sessions/YYYY/MM/DD. Unlike
+    Claude Code there is no project-specific directory, so scan recent JSONL
+    files and use parse_codex's SessionMeta.cwd to find this disposable workdir.
+    """
+    from cram.audit import _codex_sessions_dir
+    sd = _codex_sessions_dir()
+    if not sd:
+        return None
+    root = os.path.realpath(os.path.abspath(workdir))
+    matches: list[str] = []
+    for path in glob.glob(os.path.join(sd, '**', '*.jsonl'), recursive=True):
+        try:
+            if os.path.getmtime(path) < since:
+                continue
+        except OSError:
+            continue
+        parsed = audit_events.parse_codex(path)
+        if parsed is None:
+            continue
+        meta, _events = parsed
+        if meta.cwd and os.path.realpath(os.path.abspath(meta.cwd)) == root:
+            matches.append(path)
+    return max(matches, key=os.path.getmtime) if matches else None
+
+
 class LiveRunner:
     """Runs a coding agent on the task via Claude Code headless mode (`claude -p`).
 
@@ -319,6 +383,39 @@ class LiveRunner:
         subprocess.run([*self.agent_cmd, task.prompt], cwd=workdir, env=env,
                        capture_output=True, timeout=self.timeout)
         return _newest_transcript_for(workdir)
+
+
+class CodexRunner:
+    """Runs a task through Codex CLI noninteractive mode (`codex exec`)."""
+    def __init__(
+        self,
+        agent_cmd: tuple[str, ...] = (
+            'codex', 'exec',
+            '--sandbox', 'workspace-write',
+            '--skip-git-repo-check',
+        ),
+        timeout: int = 900,
+    ):
+        self.agent_cmd = tuple(agent_cmd)
+        self.timeout = timeout
+
+    def available(self) -> Availability:
+        exe = self.agent_cmd[0]
+        if shutil.which(exe) is None:
+            return Availability(False, f'{exe} CLI not on PATH — install Codex '
+                                       f'or add Codex.app/Contents/Resources/codex')
+        return Availability(True)
+
+    def run(self, task: Task, setup: dict, workdir: str) -> str | None:
+        av = self.available()
+        if not av.ok:
+            raise RuntimeError(av.reason)
+        env = {**os.environ, **{k: str(v) for k, v in (setup or {}).items()}}
+        start = time.time()
+        subprocess.run([*self.agent_cmd, '--cd', workdir, task.prompt],
+                       cwd=workdir, env=env, capture_output=True,
+                       timeout=self.timeout)
+        return _newest_codex_transcript_for(workdir, since=start)
 
 
 class MockRunner:
@@ -367,7 +464,10 @@ def effective_tokens(transcript_path: str, *, provider: str | None = None,
     Reuses derive_session_timeline so this matches `cram audit --session`.
     Returns 0.0 for an unparseable or usage-free transcript.
     """
-    parsed = audit_events.parse_claude(transcript_path)
+    if f'{os.sep}.codex{os.sep}sessions{os.sep}' in transcript_path:
+        parsed = audit_events.parse_codex(transcript_path)
+    else:
+        parsed = audit_events.parse_claude(transcript_path)
     if parsed is None:
         return 0.0
     meta, events = parsed
@@ -638,7 +738,32 @@ def render_summary(summary: dict, *, baseline: str = 'baseline') -> str:
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
-def _dry_run(corpus: list[Task], providers: list[ProviderAdapter]) -> None:
+def _make_runner(name: str) -> Runner:
+    if name == 'claude':
+        return LiveRunner()
+    if name == 'codex':
+        return CodexRunner()
+    raise ValueError(f'unknown runner {name!r}')
+
+
+def _configure_providers_for_runner(
+    providers: list[ProviderAdapter],
+    runner_name: str,
+) -> list[ProviderAdapter]:
+    for provider in providers:
+        if isinstance(provider, CramAdapter) and runner_name == 'codex':
+            provider.target = 'codex'
+    return providers
+
+
+def _runner_availability(name: str) -> Availability:
+    runner = _make_runner(name)
+    available = getattr(runner, 'available', None)
+    return available() if callable(available) else Availability(True)
+
+
+def _dry_run(corpus: list[Task], providers: list[ProviderAdapter],
+             runner_name: str) -> None:
     print(f"\ncram rig — dry run  ({len(corpus)} tasks × {len(providers)} providers)\n")
     print("  Providers:")
     for prov in providers:
@@ -653,11 +778,13 @@ def _dry_run(corpus: list[Task], providers: list[ProviderAdapter]) -> None:
     runnable = [p.name for p in providers if p.availability().ok]
     print(f"\n  Would run {len(corpus) * len(runnable)} (task × available-provider) "
           f"cells: {', '.join(runnable) or 'none'}.")
-    rav = LiveRunner().available()
-    runner_note = ('the Claude Code CLI (`claude -p`, reuses your existing login '
-                   '— no API key)' if not rav.ok else
-                   '`claude -p` (Claude Code login already detected)')
-    print(f"  Live runs use {runner_note}.\n")
+    rav = _runner_availability(runner_name)
+    runner_label = {
+        'claude': '`claude -p`',
+        'codex':  '`codex exec`',
+    }[runner_name]
+    status = 'detected' if rav.ok else f'unavailable — {rav.reason}'
+    print(f"  Live runs use {runner_label} ({status}).\n")
 
 
 def _run_observe(optimizer: str, repo_root: str, days: int, as_json: bool) -> None:
@@ -699,6 +826,9 @@ def main() -> None:
                         help='resolve the grid + availability without running')
     parser.add_argument('--work-root', default=None,
                         help='directory for per-run workdirs (default: a tempdir)')
+    parser.add_argument('--runner', choices=('claude', 'codex'), default='claude',
+                        help='headless coding agent for controlled mode '
+                             '(default: claude)')
     parser.add_argument('--json', action='store_true', dest='as_json')
     args = parser.parse_args()
 
@@ -723,13 +853,14 @@ def main() -> None:
         providers = [get_provider(n.strip()) for n in args.providers.split(',') if n.strip()]
     except KeyError as e:
         parser.error(str(e))
+    providers = _configure_providers_for_runner(providers, args.runner)
 
     if args.dry_run:
-        _dry_run(corpus, providers)
+        _dry_run(corpus, providers, args.runner)
         return
 
-    runner = LiveRunner()
-    rav = runner.available()
+    runner = _make_runner(args.runner)
+    rav = _runner_availability(args.runner)
     if not rav.ok:
         parser.error(f'{rav.reason}. Run with --dry-run to resolve the grid '
                      f'without executing.')

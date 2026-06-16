@@ -477,9 +477,15 @@ Providers:
 | `claude-context` | third-party semantic code-search MCP |
 | `headroom`, `context-mode` | stubs that report what wiring is missing |
 
-Controlled live runs can use Claude Code headless (`claude -p`) or Codex noninteractive mode
-(`codex exec`) and reuse the existing CLI login. More agent runners can be added behind the
-same corpus/oracle interface.
+Runners (controlled mode — pick with `--runner`):
+
+| Runner | Agent | Notes |
+|---|---|---|
+| `claude` (default) | Claude Code headless (`claude -p`) | reuses your Claude login |
+| `codex` | Codex noninteractive (`codex exec`) | reuses your Codex login; routes the `cram` provider through `AGENTS.md` |
+
+Both reuse the existing CLI login (no API key). More agent runners can be added behind the same
+corpus/oracle interface.
 
 ---
 

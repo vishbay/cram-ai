@@ -155,6 +155,22 @@ class TestRenderReport:
         assert 'pre-edit' not in md.split('## Token waterfall')[1].split('## ')[0]
 
 
+    def test_session_count_not_shadowed_by_spine_total(self, tmp_path, monkeypatch):
+        # Regression: total (session count) was overwritten by tree['total']
+        # (effective tokens), producing "1/121683723 sessions" in findings rows.
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        n_sessions = data['sessions']
+        md = render_report(data, repo)
+        # Any "/N sessions" fragment must use the real session count, not eff tokens.
+        import re
+        for match in re.findall(r'/(\S+) sessions', md):
+            val = match.rstrip(')')
+            assert val == str(n_sessions), (
+                f'Found "/{{val}} sessions" — expected session count {n_sessions}, '
+                f'got {val} (likely eff-token total leaked in)')
+
+
 class TestSessionIdent:
     def test_extracts_uuid_from_codex_rollout(self):
         from cram.audit_events import _session_ident

@@ -229,3 +229,12 @@ class TestStructureHashFreshness:
         _add_empty_commit(git_repo, 3)
         result = get_status_dict(str(git_repo))
         assert result['commits_since_sync'] == 3
+
+    def test_status_line_labels_staleness_not_health(self, git_repo, capsys):
+        # 0 = fresh; the line must read "Staleness : 0/10 (fresh)" so a low
+        # score isn't misread as bad "health".
+        from cram.status import show_status
+        show_status(str(git_repo))
+        out = capsys.readouterr().out
+        assert 'Staleness : 0/10 (fresh)' in out
+        assert 'Context health' not in out

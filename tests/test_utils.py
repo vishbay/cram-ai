@@ -359,6 +359,14 @@ class TestCallViaGemini:
 # ---------------------------------------------------------------------------
 
 class TestCallContextModelRouting:
+    def test_codex_cli_prefix_routes_to_codex_caller(self):
+        from cram.utils import call_context_model
+        with patch('cram.utils.load_settings', return_value={'context_model': 'codex-cli/default'}):
+            with patch('cram.utils._call_via_codex_cli', return_value='codex') as mock_codex:
+                result = call_context_model('prompt')
+        assert result == 'codex'
+        mock_codex.assert_called_once_with('prompt', 'default')
+
     def test_gemini_prefix_routes_to_call_via_gemini(self):
         from cram.utils import call_context_model
         with patch('cram.utils.load_settings', return_value={'context_model': 'gemini/gemini-2.0-flash'}):
@@ -390,12 +398,40 @@ class TestCallContextModelRouting:
                 result = call_context_model('hi')
         assert result == 'vx'
 
+    def test_auto_context_model_can_choose_codex_cli(self):
+        from cram.utils import call_context_model
+        codex = {'id': 'codex-cli/default', 'provider': 'codex-cli', 'tier': 'context',
+                 'name': 'Codex CLI (codex exec)', 'cost': 0, 'quality': 4}
+        claude = {'id': 'cli/haiku', 'provider': 'claude-cli', 'tier': 'context',
+                  'name': 'Claude Haiku (claude CLI)', 'cost': 0, 'quality': 2}
+        with patch('cram.utils.load_settings', return_value={'context_model': 'auto'}), \
+             patch('cram.utils.discover_models', return_value=[claude, codex]), \
+             patch('cram.utils._prefer_codex_context', return_value=True), \
+             patch('cram.utils._call_via_codex_cli', return_value='ok') as mock_codex:
+            result = call_context_model('hi')
+        assert result == 'ok'
+        mock_codex.assert_called_once_with('hi', 'default')
+
 
 # ---------------------------------------------------------------------------
 # discover_models includes LM Studio
 # ---------------------------------------------------------------------------
 
 class TestDiscoverModelsLmStudio:
+    def test_codex_cli_included_when_available(self):
+        from cram.utils import discover_models
+        with patch('cram.utils._check_claude_cli', return_value=False), \
+             patch('cram.utils._check_codex_cli', return_value=True), \
+             patch('cram.utils._probe_ollama', return_value=[]), \
+             patch('cram.utils._probe_lmstudio', return_value=[]), \
+             patch('cram.utils._check_aws_credentials', return_value=False), \
+             patch('cram.utils._check_gcp_credentials', return_value=False), \
+             patch('cram.utils._check_azure_credentials', return_value=False), \
+             patch('cram.utils.load_settings', return_value={}), \
+             patch.dict('os.environ', {}, clear=True):
+            result = discover_models()
+        assert any(m['id'] == 'codex-cli/default' for m in result)
+
     def test_lmstudio_included_when_running(self):
         from cram.utils import discover_models
         lmstudio_model = {
@@ -404,6 +440,7 @@ class TestDiscoverModelsLmStudio:
             'base_url': 'http://localhost:1234',
         }
         with patch('cram.utils._check_claude_cli', return_value=False), \
+             patch('cram.utils._check_codex_cli', return_value=False), \
              patch('cram.utils._probe_ollama', return_value=[]), \
              patch('cram.utils._probe_lmstudio', return_value=[lmstudio_model]), \
              patch('cram.utils._check_aws_credentials', return_value=False), \
@@ -417,6 +454,7 @@ class TestDiscoverModelsLmStudio:
     def test_lmstudio_not_included_when_offline(self):
         from cram.utils import discover_models
         with patch('cram.utils._check_claude_cli', return_value=False), \
+             patch('cram.utils._check_codex_cli', return_value=False), \
              patch('cram.utils._probe_ollama', return_value=[]), \
              patch('cram.utils._probe_lmstudio', return_value=[]), \
              patch('cram.utils._check_aws_credentials', return_value=False), \
@@ -426,3 +464,23 @@ class TestDiscoverModelsLmStudio:
              patch.dict('os.environ', {}, clear=True):
             result = discover_models()
         assert not any(m['provider'] == 'lmstudio' for m in result)
+
+
+class TestPickContextModel:
+    def test_prefers_codex_cli_when_codex_context_preferred(self):
+        from cram.utils import pick_context_model
+        codex = {'id': 'codex-cli/default', 'provider': 'codex-cli', 'tier': 'context',
+                 'name': 'Codex CLI (codex exec)', 'cost': 0, 'quality': 4}
+        claude = {'id': 'cli/haiku', 'provider': 'claude-cli', 'tier': 'context',
+                  'name': 'Claude Haiku (claude CLI)', 'cost': 0, 'quality': 2}
+        with patch('cram.utils._prefer_codex_context', return_value=True):
+            assert pick_context_model([claude, codex]) == codex
+
+    def test_keeps_claude_cli_default_when_codex_not_preferred(self):
+        from cram.utils import pick_context_model
+        codex = {'id': 'codex-cli/default', 'provider': 'codex-cli', 'tier': 'context',
+                 'name': 'Codex CLI (codex exec)', 'cost': 0, 'quality': 4}
+        claude = {'id': 'cli/haiku', 'provider': 'claude-cli', 'tier': 'context',
+                  'name': 'Claude Haiku (claude CLI)', 'cost': 0, 'quality': 2}
+        with patch('cram.utils._prefer_codex_context', return_value=False):
+            assert pick_context_model([codex, claude]) == claude

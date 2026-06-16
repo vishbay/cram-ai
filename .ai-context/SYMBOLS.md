@@ -56,4 +56,4 @@ tests/test_sync.py: TestGetGitDiff, TestUpdateArchitectureMd, TestSync
 tests/test_targets.py: TestUpsertCramSectionRegexSafe, TestSaveLoadDefaultTarget, TestDetectTargets, TestWriteToTarget, TestCustomTargets
 tests/test_ui_smoke.py: empty_repo, TestUiSmoke
 tests/test_usage.py: test_missing_dir_returns_none, test_sums_match_fixture, test_malformed_lines_skipped, test_old_files_excluded
-tests/test_utils.py: TestStripCodeFence, TestCallModelRouting, TestCallViaLitellmMissing, TestProxyHeaders, TestProbeLmStudio, TestCallViaOpenaiCompat, TestCallViaGemini, TestCallContextModelRouting, TestDiscoverModelsLmStudio
+tests/test_utils.py: TestStripCodeFence, TestCallModelRouting, TestCallViaLitellmMissing, TestProxyHeaders, TestProbeLmStudio, TestCallViaOpenaiCompat, TestCallViaGemini, TestCallContextModelRouting, TestDiscoverModelsLmStudio, TestPickContextModel

@@ -670,6 +670,10 @@ extracting excerpts). Set `AICONTEXT_MODEL` to any provider:
 # Inside Claude Code — zero config, uses session credentials
 cram init
 
+# Inside Codex — auto-detected in Codex-oriented repos; force it with:
+export CRAM_CONTEXT_PROVIDER=codex
+cram init
+
 # Anthropic API key
 export ANTHROPIC_API_KEY=sk-...
 export AICONTEXT_MODEL=anthropic/claude-haiku-4-5
@@ -687,8 +691,8 @@ export AICONTEXT_MODEL=ollama/mistral
 cram init
 ```
 
-Also supports: AWS Bedrock, GCP Vertex AI, Azure OpenAI, custom LiteLLM proxies with
-`proxy.base_url` + `proxy.headers` (install `cram-ai[multi-provider]`).
+Also supports: Codex CLI, AWS Bedrock, GCP Vertex AI, Azure OpenAI, custom LiteLLM
+proxies with `proxy.base_url` + `proxy.headers` (install `cram-ai[multi-provider]`).
 
 ---
 
@@ -697,6 +701,7 @@ Also supports: AWS Bedrock, GCP Vertex AI, Azure OpenAI, custom LiteLLM proxies 
 | Variable | Default | Description |
 |---|---|---|
 | `AICONTEXT_MODEL` | auto-detected | Model for context tasks — bare alias (`haiku`) or `provider/model` |
+| `CRAM_CONTEXT_PROVIDER` | auto-detected | Prefer an agent CLI for context tasks; set to `codex` or `claude` |
 | `ANTHROPIC_API_KEY` | — | Optional inside Claude Code (uses session credentials) |
 | `AICONTEXT_MAX_FILES` | `5` | Max files included in CURRENT_TASK.md per task |
 | `AICONTEXT_MAX_LINES` | `300` | Max lines per file when extracting excerpts |

@@ -19,7 +19,7 @@ _GLOBAL_CLAUDE_MD_BLOCK = """\
 > to reload the last task's context.
 > You do NOT need a new session per task. When the task changes mid-session,
 > call get_context("the next task") again — it reloads focused context inline,
-> no restart or TUI needed. Keep working in a single session.
+> no restart needed. Keep working in a single session.
 > Run `cram doctor` if tools are missing.
 """
 

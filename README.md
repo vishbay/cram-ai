@@ -198,9 +198,6 @@ It is weaker, and sometimes neutral or negative, for:
 # Standard install with MCP support
 pip install 'cram-ai[mcp]'
 
-# Terminal UI
-pip install 'cram-ai[mcp,tui]'
-
 # Extra provider support through LiteLLM
 pip install 'cram-ai[mcp,multi-provider]'
 ```
@@ -630,7 +627,6 @@ cram sync
 Health surfaces in:
 
 - `cram status`
-- `cram ui`
 - `get_health()`
 - `get_context()` warnings when context is stale or critical
 
@@ -646,15 +642,20 @@ Soft budgets warn but do not truncate:
 
 ---
 
-## TUI
+## HTML report
 
 ```bash
-pip install 'cram-ai[tui]'
-cram ui
+cram audit --report-html        # writes ./cram-audit-report.html and opens it
+cram audit --report-html FILE   # write to a specific path
+cram audit --report-html --no-open
 ```
 
-The dashboard shows audit metrics, recent sessions, context health, pending decisions,
-history, and common actions. It opens on the audit view because the number is the product.
+A single self-contained HTML file — inline CSS/JS, no external fonts or fetches — so it
+travels: open it locally, attach it to a PR, drop it in Slack. It renders the token
+waterfall, findings with fix/verify, the session leaderboard, the waste layers with
+collapsible top-contributor drilldowns, and the key metrics. Responsive, with a
+light/dark toggle. It's built from the same `collect_audit()` data as `cram audit
+--report`, so it makes no claim the text report doesn't.
 
 ---
 
@@ -665,7 +666,8 @@ history, and common actions. It opens on the audit view because the number is th
 | `cram audit` | Profile agent sessions |
 | `cram audit --session <id>` | Inspect one session's token waterfall |
 | `cram audit --layer <name>` | Drill into one waste class (orientation/repeated/redundant/carried/retries/churn) |
-| `cram audit --report [FILE]` | Write a shareable report |
+| `cram audit --report [FILE]` | Write a shareable markdown report |
+| `cram audit --report-html [FILE]` | Write a standalone HTML report (opens in your browser) |
 | `cram audit --compare A B` | Compare two checkouts |
 | `cram init` | Create `.ai-context/` |
 | `cram task "..."` | Build task context |
@@ -680,7 +682,6 @@ history, and common actions. It opens on the audit view because the number is th
 | `cram rig ...` | Verify optimizers |
 | `cram mcp` | Start the MCP server |
 | `cram hook install\|uninstall` | Manage the git post-commit sync hook |
-| `cram ui` | Open the TUI |
 | `cram doctor` | Check setup |
 
 ---

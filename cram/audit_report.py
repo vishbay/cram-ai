@@ -76,6 +76,58 @@ def render_report(data: dict, repo_root: str) -> str:
                 f'(excluded — reviews, Q&A, or runs with no counted edit)')
     lines.append(f'Sessions: {seg}.')
 
+    # ── Token waterfall ─────────────────────────────────────────────────────────
+    spine = data.get('token_spine') or {}
+    spine_total = spine.get('total', 0) or 0
+    if spine_total > 0:
+        lines.append('')
+        lines.append('## Token waterfall')
+        lines.append('')
+        lines.append('**Measured spine** — effective input-side composition. Every token is '
+                     'counted once, so these sum to the total.')
+        lines.append('')
+        lines.append('```')
+        comps = sorted(
+            [('cache read', spine.get('cache_read', 0)),
+             ('fresh input', spine.get('fresh_input', 0)),
+             ('cache write', spine.get('cache_write', 0))],
+            key=lambda kv: kv[1], reverse=True,
+        )
+        width = 30
+        mx = max((v for _, v in comps), default=0) or 1
+        for label, val in comps:
+            bar = '█' * max(1, round(val / mx * width)) if val else ''
+            pct = val / spine_total * 100
+            lines.append(f'{label:<12} {bar:<30} {val:>13,.0f}  {pct:3.0f}%')
+        lines.append(f'{"":<12} {"":<30} {"─" * 13}')
+        lines.append(f'{"total":<12} {"":<30} {spine_total:>13,.0f}   eff. input')
+        lines.append('```')
+        lines.append('')
+        lines.append('**Estimated / overlapping attribution** — modeled and not mutually '
+                     'exclusive, so these do **not** sum to the spine.')
+        lines.append('')
+        lines.append('| Attribution | Value | Basis |')
+        lines.append('|---|---:|---|')
+        if data.get('pre_edit_spend_share') is not None:
+            lines.append(f'| Pre-edit (orientation) share | '
+                         f'{data["pre_edit_spend_share"]:.0%} of input-side spend | measured |')
+        lines.append(f'| ~ orientation file reads | '
+                     f'~${data["orient_cost_per_session"]:.4f}/session '
+                     f'| estimated (tokens/file model) |')
+        if data.get('sessions_with_big_results'):
+            lines.append(f'| ~ carried oversized output | '
+                         f'~${data["carried_cost_per_session"]:.4f}/session '
+                         f'| estimated (measured tok × price) |')
+        if data.get('avg_redundant_reads', 0) >= 0.5:
+            lines.append(f'| Redundant same-file reads | '
+                         f'{data["avg_redundant_reads"]:.1f}/session | measured count |')
+        if data.get('avg_error_results', 0) > 0:
+            lines.append(f'| Failed tool calls (retries) | '
+                         f'{data["avg_error_results"]:.1f}/session | measured count |')
+        if data.get('avg_context_growth') is not None:
+            lines.append(f'| Context growth (peak/start) | '
+                         f'{data["avg_context_growth"]:.1f}× | measured |')
+
     # ── Findings ──────────────────────────────────────────────────────────────
     findings = data.get('findings') or []
     if findings:

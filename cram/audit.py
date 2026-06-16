@@ -446,6 +446,19 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     cache_blind   = sum(1 for s in all_sessions
                         if s['cache_writes'] > 0 and s['cache_reads'] == 0)
 
+    # Measured spine for the token waterfall: effective input-side composition.
+    # fresh input (×1) + cache read (×read mult) + cache write (×write mult).
+    # Every token counted once → these three sum to total effective input.
+    spine_fresh = float(sum(s['input_tokens'] for s in all_sessions))
+    spine_read  = sum(s['cache_reads']  for s in all_sessions) * CACHE_READ_MULT
+    spine_write = sum(s['cache_writes'] for s in all_sessions) * CACHE_WRITE_MULT
+    token_spine = {
+        'cache_read':  spine_read,
+        'fresh_input': spine_fresh,
+        'cache_write': spine_write,
+        'total':       spine_fresh + spine_read + spine_write,
+    }
+
     # Bucket 2: context bloat
     with_reqs        = [s for s in all_sessions if s['requests']]
     avg_requests     = sum(s['requests'] for s in all_sessions) / total
@@ -589,6 +602,7 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'weekly':                    weekly,
         'recent':                    recent,
         'leaderboard':               leaderboard,
+        'token_spine':               token_spine,
         # Live transcripts whose parse failed this run; their sessions are
         # missing from every number above.
         'parse_failures':            len(store.run_failures),

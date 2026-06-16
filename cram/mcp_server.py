@@ -300,7 +300,7 @@ def propose_decision(text: str, reason: str = '', alternatives: str = '') -> str
     with open(path, 'a') as f:
         f.write(entry)
 
-    # Log to suggestions.jsonl for TUI visibility
+    # Log to suggestions.jsonl for later review
     suggestions_path = os.path.join(_repo_root, '.ai-context', 'suggestions.jsonl')
     try:
         with open(suggestions_path, 'a') as f:
@@ -314,7 +314,7 @@ def propose_decision(text: str, reason: str = '', alternatives: str = '') -> str
     except OSError:
         pass
 
-    return f'Added [{decision_id}] to DECISIONS.md with [PENDING] status. Review with `cram ui` or edit the file directly.'
+    return f'Added [{decision_id}] to DECISIONS.md with [PENDING] status. Review with `cram decisions` or edit the file directly.'
 
 
 @mcp.tool()

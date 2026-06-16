@@ -22,7 +22,6 @@ Commands:
   doctor      [path]                       Check setup: models, hooks, git, context files
   hook        install|uninstall [path]     Manage the git post-commit hook
   mcp         [--repo PATH]                Start MCP server (stdio) for Claude Code / agents
-  ui          [path]                       Launch TUI dashboard, Audit tab first (requires cram-ai[tui])
 
 --target choices: cursor | claude | copilot | codex | windsurf | all
   Set a default in .ai-context/config.toml:  [task] default_target = "cursor"
@@ -76,8 +75,6 @@ def main() -> None:
         from cram.hooks import main as _main
     elif cmd == 'mcp':
         from cram.mcp_server import main as _main
-    elif cmd == 'ui':
-        from cram.ui import main as _main
     else:
         print(f"Unknown command: {cmd!r}\n")
         print(USAGE)

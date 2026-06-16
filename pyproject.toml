@@ -32,7 +32,6 @@ dependencies = [
 [project.optional-dependencies]
 multi-provider = ["litellm>=1.40.0"]
 mcp = ["mcp>=1.0.0"]
-tui = ["textual>=0.80"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

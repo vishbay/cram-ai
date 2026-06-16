@@ -45,7 +45,7 @@ class TestFilterCommits:
         assert not any('bump' in l for l in result)
 
     def test_case_insensitive(self):
-        lines = ['abc1234 Decided to use Textual for TUI']
+        lines = ['abc1234 Decided to use SQLite for the event store']
         assert _filter_commits(lines)
 
     def test_empty_input(self):

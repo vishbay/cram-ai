@@ -323,22 +323,13 @@ def _segment_metrics(sessions: list[dict]) -> dict:
     }
 
 
-def _analyze_transcript_cached(store, path: str) -> dict | None:
-    """Cache-backed equivalent of _analyze_transcript (for the TUI)."""
-    out = None
-    for meta, events in _sessions_from_file(
-            store, path, 'claude', audit_events.parse_claude, False):
-        out = _derive(meta, events)
-    return out
-
-
 def collect_audit(repo_root: str, days: int = 30, all_projects: bool = False,
                   *, reingest: bool = False,
                   failures_out: list[str] | None = None) -> dict | None:
     """Analyse transcripts and return structured audit data, or None if none found.
 
     This is the data core shared by the CLI report, `cram audit --json`, and the
-    TUI's Audit tab. Includes Cursor sessions when available (single-repo mode only).
+    HTML report. Includes Cursor sessions when available (single-repo mode only).
     Transcripts are ingested into the local event store on first sight and
     re-parsed only when they change; reingest=True bypasses the cache.
 
@@ -1126,7 +1117,7 @@ def _layer_rows(layer: str, sessions: list[dict], repo_root: str) -> list[dict]:
 
 
 def format_layer_row(layer: str, r: dict, repo_root: str) -> str:
-    """One-line rendering of a drilldown row, shared by the CLI and the TUI."""
+    """One-line rendering of a drilldown row, shared by the CLI and the HTML report."""
     if layer == 'repeated':
         return f"{r['reads']}× in {r['sessions']} sessions  {audit_events.repo_rel(r['file'], repo_root)}"
     if layer == 'redundant':

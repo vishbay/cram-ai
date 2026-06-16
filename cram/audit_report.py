@@ -87,18 +87,18 @@ def render_report(data: dict, repo_root: str) -> str:
 
     if tree:
         n = tree['pool_sessions']
-        total = tree['total']
+        spine_eff_total = tree['total']
         lines.append('**Measured spine** — effective input by composition × pre/post-edit, over '
                      f'{n} edit session{"s" if n != 1 else ""} with token usage. '
                      'Children sum to their parent.')
         lines.append('')
         lines.append('```')
-        lines.append(f'eff input  {total:>13,.0f}')
+        lines.append(f'eff input  {spine_eff_total:>13,.0f}')
         comps = sorted(tree['components'], key=lambda c: c['eff'], reverse=True)
         for i, c in enumerate(comps):
             last = i == len(comps) - 1
             branch, childpfx = ('└─', '   ') if last else ('├─', '│  ')
-            pct = c['eff'] / total * 100 if total else 0
+            pct = c['eff'] / spine_eff_total * 100 if spine_eff_total else 0
             lines.append(f'{branch} {c["label"]:<11} {pct:3.0f}%  {c["eff"]:>13,.0f}')
             pre_pct = c['pre'] / c['eff'] * 100 if c['eff'] else 0
             lines.append(f'{childpfx}├─ pre-edit   {pre_pct:3.0f}%')

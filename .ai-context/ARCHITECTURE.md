@@ -32,7 +32,7 @@ Core Python package containing main functionality:
 - `benchmark.py` - Cache-write cost modeling and token savings benchmarking
 - `cost_model.py` - Multi-provider pricing model; orientation cost computation with provider selection
 - `utils.py` - Shared utilities: model discovery, LLM routing (Claude CLI / Ollama / OpenAI-compat / Gemini), Ollama timeout handling
-- `__init__.py` - Package initialization
+- `__init__.py` - Package initialization; exposes `__version__` from installed `cram-ai` package metadata with a `0.0.0+dev` source-checkout fallback
 
 ### `templates/` and `examples/`
 - `templates/` - Template files for project initialization
@@ -45,7 +45,7 @@ Test suite for the package functionality, including audit aggregate/report cover
 
 | File | Purpose |
 |------|---------|
-| `pyproject.toml` | Python package metadata and build configuration |
+| `pyproject.toml` | Python package metadata and build configuration; single source of truth for release version |
 | `setup.py` | setuptools shim for pip compatibility |
 | `requirements.txt` | Python dependencies |
 | `CASE_STUDY.md` | Real-world case study demonstrating profiler (token measurement) and referee (before/after verification) on GitHub issues |
@@ -138,4 +138,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash fafef76844e4f405ffae41406e792670ee408aeabc0db6a364d94689d10a589b -->
+<!-- cram:structure-hash 38aaabae93b029aed17ac201bfb021860f5ed963d80d911d47132529f2c88f28 -->

@@ -245,7 +245,7 @@ def show_status(root: str = '.') -> None:
     if last_commit:
         print(f"Last commit : {_age_label(last_commit)}")
 
-    msg = f"Context health : {band} ({score}/10)"
+    msg = f"Staleness : {score}/10 ({band})"
     if commits is not None:
         plural = 's' if commits != 1 else ''
         msg += f" — {commits} commit{plural} since last sync."

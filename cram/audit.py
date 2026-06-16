@@ -1062,6 +1062,24 @@ def _layer_rows(layer: str, sessions: list[dict], repo_root: str) -> list[dict]:
     raise ValueError(f'unknown layer {layer!r}; choose from {", ".join(LAYERS)}')
 
 
+def format_layer_row(layer: str, r: dict, repo_root: str) -> str:
+    """One-line rendering of a drilldown row, shared by the CLI and the TUI."""
+    if layer == 'repeated':
+        return f"{r['reads']}× in {r['sessions']} sessions  {audit_events.repo_rel(r['file'], repo_root)}"
+    if layer == 'redundant':
+        return f"+{r['extra_reads']} re-reads  {audit_events.repo_rel(r['file'], repo_root)}"
+    if layer == 'churn':
+        return f"+{r['re_edits']} re-edits  {audit_events.repo_rel(r['file'], repo_root)}"
+    if layer == 'carried':
+        return (f"{r['carried_tokens']:,} carried tok ({r['big_results']} big result"
+                f"{'s' if r['big_results'] != 1 else ''})  {r['session_id'][:8]} · {r['source']}")
+    if layer == 'retries':
+        return f"{r['failed']} failed calls  {r['session_id'][:8]} · {r['source']}"
+    if layer == 'orientation':
+        return f"{r['reads_before_edit']} reads before 1st edit  {r['session_id'][:8]} · {r['source']}"
+    return str(r)
+
+
 def collect_layer(repo_root: str, layer: str, days: int = 30,
                   all_projects: bool = False, *, reingest: bool = False) -> list[dict]:
     """Drill into one waste layer; return its ranked contributor rows."""
@@ -1087,21 +1105,7 @@ def run_layer(layer: str, repo_root: str, days: int = 30, all_projects: bool = F
     print(f"\nLayer drilldown — {layer}  (last {days} days, top {min(len(rows), 15)})\n")
     file_layers = {'repeated', 'redundant', 'churn'}
     for r in rows[:15]:
-        if layer == 'repeated':
-            print(f"  {r['reads']:>4}× in {r['sessions']:>2} sessions  "
-                  f"{audit_events.repo_rel(r['file'], repo_root)}")
-        elif layer == 'redundant':
-            print(f"  +{r['extra_reads']:>3} re-reads  {audit_events.repo_rel(r['file'], repo_root)}")
-        elif layer == 'churn':
-            print(f"  +{r['re_edits']:>3} re-edits  {audit_events.repo_rel(r['file'], repo_root)}")
-        elif layer == 'carried':
-            print(f"  {r['carried_tokens']:>12,} carried tok  ({r['big_results']} big result"
-                  f"{'s' if r['big_results'] != 1 else ''})  {r['session_id'][:8]} · {r['source']}")
-        elif layer == 'retries':
-            print(f"  {r['failed']:>3} failed calls  {r['session_id'][:8]} · {r['source']}")
-        elif layer == 'orientation':
-            print(f"  {r['reads_before_edit']:>3} reads before 1st edit  "
-                  f"{r['session_id'][:8]} · {r['source']}")
+        print('  ' + format_layer_row(layer, r, repo_root))
     if layer not in file_layers:
         print("\n  Drill into a Claude session with `cram audit --session <id>`.")
     print()

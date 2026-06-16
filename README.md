@@ -347,6 +347,22 @@ Failed tool calls: 1
 Use this when an aggregate finding is too abstract and you need the exact turn or file that
 caused the cost.
 
+### Layer drilldown
+
+To expand one waste class into its concrete contributors across sessions:
+
+```bash
+cram audit --layer orientation   # sessions with the most reads before first edit
+cram audit --layer repeated      # files re-read across sessions (briefing candidates)
+cram audit --layer redundant     # files re-read within a session
+cram audit --layer carried       # sessions carrying oversized tool output
+cram audit --layer retries       # sessions with failed tool calls
+cram audit --layer churn         # files re-edited within a session
+```
+
+Each lists the worst offenders (files or sessions), so you can go from "context bloat is high"
+to the exact files/sessions causing it. Add `--json` for structured output.
+
 ---
 
 ## Context layer
@@ -645,6 +661,7 @@ history, and common actions. It opens on the audit view because the number is th
 |---|---|
 | `cram audit` | Profile agent sessions |
 | `cram audit --session <id>` | Inspect one session's token waterfall |
+| `cram audit --layer <name>` | Drill into one waste class (orientation/repeated/redundant/carried/retries/churn) |
 | `cram audit --report [FILE]` | Write a shareable report |
 | `cram audit --compare A B` | Compare two checkouts |
 | `cram init` | Create `.ai-context/` |

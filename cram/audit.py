@@ -355,8 +355,13 @@ def collect_audit(repo_root: str, days: int = 30, all_projects: bool = False,
         store.close()
 
 
-def _collect_audit_inner(store, repo_root: str, days: int,
-                         all_projects: bool, reingest: bool) -> dict | None:
+def _gather_sessions(store, repo_root: str, days: int,
+                     all_projects: bool, reingest: bool) -> tuple[list[dict], list]:
+    """Collect per-session dicts (Claude + Cursor + Codex) for the window.
+
+    Shared by the aggregate audit and the per-layer drilldown so both see the
+    exact same session pool.
+    """
     if all_projects:
         projects_root = os.path.join(os.path.expanduser('~'), '.claude', 'projects')
         dirs = sorted(glob.glob(projects_root + '/*/'))
@@ -429,6 +434,13 @@ def _collect_audit_inner(store, repo_root: str, days: int,
                 ('codex', len(codex_sessions), avg_reads, avg_rbe, 0.0)
             )
 
+    return all_sessions, project_summaries
+
+
+def _collect_audit_inner(store, repo_root: str, days: int,
+                         all_projects: bool, reingest: bool) -> dict | None:
+    all_sessions, project_summaries = _gather_sessions(
+        store, repo_root, days, all_projects, reingest)
     if not all_sessions:
         return None
 
@@ -989,6 +1001,112 @@ def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
     print()
 
 
+LAYERS = ('orientation', 'repeated', 'redundant', 'carried', 'retries', 'churn')
+
+
+def _layer_rows(layer: str, sessions: list[dict], repo_root: str) -> list[dict]:
+    """Concrete contributors for one waste layer, ranked worst-first."""
+    from collections import Counter, defaultdict
+
+    if layer in ('repeated', 'redundant'):
+        reads = Counter()
+        sess_seen: dict[str, set] = defaultdict(set)
+        for i, s in enumerate(sessions):
+            for fp, c in (s.get('read_file_counts') or {}).items():
+                if layer == 'redundant':
+                    if c > 1:
+                        reads[fp] += c - 1
+                else:
+                    reads[fp] += c
+                    sess_seen[fp].add(i)
+        if layer == 'redundant':
+            rows = [{'file': fp, 'extra_reads': n} for fp, n in reads.items() if n > 0]
+            rows.sort(key=lambda r: -r['extra_reads'])
+        else:
+            rows = [{'file': fp, 'reads': reads[fp], 'sessions': len(sess_seen[fp])}
+                    for fp in reads if len(sess_seen[fp]) >= 2]
+            rows.sort(key=lambda r: (-r['reads'], -r['sessions']))
+        return rows
+
+    if layer == 'churn':
+        extra = Counter()
+        for s in sessions:
+            for fp, c in (s.get('edit_file_counts') or {}).items():
+                if c > 1:
+                    extra[fp] += c - 1
+        rows = [{'file': fp, 're_edits': n} for fp, n in extra.items() if n > 0]
+        rows.sort(key=lambda r: -r['re_edits'])
+        return rows
+
+    if layer == 'carried':
+        rows = [{'session_id': s.get('session_id', ''), 'source': s.get('source', 'claude'),
+                 'big_results': s['big_results'], 'carried_tokens': s['carried_read_tokens']}
+                for s in sessions if s.get('big_results')]
+        rows.sort(key=lambda r: -r['carried_tokens'])
+        return rows
+
+    if layer == 'retries':
+        rows = [{'session_id': s.get('session_id', ''), 'source': s.get('source', 'claude'),
+                 'failed': s['error_results']}
+                for s in sessions if s.get('error_results')]
+        rows.sort(key=lambda r: -r['failed'])
+        return rows
+
+    if layer == 'orientation':
+        rows = [{'session_id': s.get('session_id', ''), 'source': s.get('source', 'claude'),
+                 'reads_before_edit': s['reads_before_edit']}
+                for s in sessions if s['edits'] > 0 and s['reads_before_edit'] > 0]
+        rows.sort(key=lambda r: -r['reads_before_edit'])
+        return rows
+
+    raise ValueError(f'unknown layer {layer!r}; choose from {", ".join(LAYERS)}')
+
+
+def collect_layer(repo_root: str, layer: str, days: int = 30,
+                  all_projects: bool = False, *, reingest: bool = False) -> list[dict]:
+    """Drill into one waste layer; return its ranked contributor rows."""
+    store = audit_store.AuditStore.open()
+    try:
+        all_sessions, _ = _gather_sessions(store, repo_root, days, all_projects, reingest)
+    finally:
+        store.close()
+    return _layer_rows(layer, all_sessions or [], repo_root)
+
+
+def run_layer(layer: str, repo_root: str, days: int = 30, all_projects: bool = False,
+              *, as_json: bool = False, reingest: bool = False) -> None:
+    """`cram audit --layer <name>` — print the evidence under one waste class."""
+    rows = collect_layer(repo_root, layer, days, all_projects, reingest=reingest)
+    if as_json:
+        print(json.dumps({'layer': layer, 'rows': rows}, indent=2))
+        return
+    if not rows:
+        print(f"No {layer} evidence in the last {days} days.")
+        return
+
+    print(f"\nLayer drilldown — {layer}  (last {days} days, top {min(len(rows), 15)})\n")
+    file_layers = {'repeated', 'redundant', 'churn'}
+    for r in rows[:15]:
+        if layer == 'repeated':
+            print(f"  {r['reads']:>4}× in {r['sessions']:>2} sessions  "
+                  f"{audit_events.repo_rel(r['file'], repo_root)}")
+        elif layer == 'redundant':
+            print(f"  +{r['extra_reads']:>3} re-reads  {audit_events.repo_rel(r['file'], repo_root)}")
+        elif layer == 'churn':
+            print(f"  +{r['re_edits']:>3} re-edits  {audit_events.repo_rel(r['file'], repo_root)}")
+        elif layer == 'carried':
+            print(f"  {r['carried_tokens']:>12,} carried tok  ({r['big_results']} big result"
+                  f"{'s' if r['big_results'] != 1 else ''})  {r['session_id'][:8]} · {r['source']}")
+        elif layer == 'retries':
+            print(f"  {r['failed']:>3} failed calls  {r['session_id'][:8]} · {r['source']}")
+        elif layer == 'orientation':
+            print(f"  {r['reads_before_edit']:>3} reads before 1st edit  "
+                  f"{r['session_id'][:8]} · {r['source']}")
+    if layer not in file_layers:
+        print("\n  Drill into a Claude session with `cram audit --session <id>`.")
+    print()
+
+
 def main() -> None:
     import argparse
 
@@ -1017,12 +1135,20 @@ def main() -> None:
     parser.add_argument('--session', default=None, metavar='ID',
                         help='Per-request waterfall for one session '
                              '(transcript path or session-id prefix)')
+    parser.add_argument('--layer', default=None, choices=LAYERS,
+                        help='Drill into one waste class and list its contributors')
     parser.add_argument('--path', default=None, metavar='REPO_PATH')
     args = parser.parse_args()
 
     if args.session:
         root = _resolve_root(args.path) if args.path else _resolve_root(os.getcwd())
         run_session(args.session, root, as_json=args.as_json)
+        return
+
+    if args.layer:
+        root = _resolve_root(args.path) if args.path else _resolve_root(os.getcwd())
+        run_layer(args.layer, root, days=args.days, all_projects=args.all_projects,
+                  as_json=args.as_json, reingest=args.reingest)
         return
 
     if args.compare:

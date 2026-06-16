@@ -107,6 +107,26 @@ class TestRenderReport:
         # the verify line for repeated-reads mentions a referee/compare command
         assert 'cram audit --compare' in md or 'cram rig' in md
 
+    def test_token_waterfall_renders(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        md = render_report(data, repo)
+        assert '## Token waterfall' in md
+        assert '**Measured spine**' in md
+        assert 'fresh input' in md and 'cache read' in md and 'cache write' in md
+        # the estimated overlays must be explicitly non-summing
+        assert 'do **not** sum to the spine' in md
+        assert 'estimated (tokens/file model)' in md
+
+    def test_token_spine_components_sum_to_total(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        sp = data['token_spine']
+        assert sp['cache_read'] + sp['fresh_input'] + sp['cache_write'] == sp['total']
+        # fixture has only fresh input (3000+1000+2000+2000+500)
+        assert sp['fresh_input'] == 8500
+        assert sp['total'] == 8500
+
 
 class TestSessionIdent:
     def test_extracts_uuid_from_codex_rollout(self):

@@ -608,21 +608,20 @@ def _build_app(root: str):  # noqa: ANN202
 
         def _refresh_health_inner(self) -> None:
             h = context_health(root)
-            score     = h['staleness_score']
-            band      = h['staleness_band']
-            freshness = 10 - score  # 10 = perfectly synced, 0 = critical
+            score = h['staleness_score']
+            band  = h['staleness_band']
             color = {'fresh': 'green', 'acceptable': 'yellow',
                      'stale': 'orange1', 'critical': 'red'}.get(band, 'white')
 
             band_label = {
-                'fresh':      'up to date',
-                'acceptable': 'mostly current',
+                'fresh':      'fresh',
+                'acceptable': 'acceptable',
                 'stale':      'stale — run cram sync',
                 'critical':   'critical — run cram sync now',
             }.get(band, band)
 
             lines = [
-                f'[b]Freshness:[/b] [{color}]{freshness}/10[/{color}]  [{color}]{band_label}[/{color}]',
+                f'[b]Staleness:[/b] [{color}]{score}/10 ({band_label})[/{color}]',
             ]
             commits = h.get('commits_since_sync')
             if commits is not None:

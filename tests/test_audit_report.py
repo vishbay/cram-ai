@@ -86,6 +86,43 @@ class TestRenderReport:
         data = collect_audit(repo, days=365)
         assert render_report(data, repo) == render_report(data, repo)
 
+    def test_session_leaderboard_renders(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        md = render_report(data, repo)
+        assert '## Session leaderboard' in md
+        assert '| Session | Source | Input tok |' in md
+        board = md.split('## Session leaderboard')[1].split('\n## ')[0]
+        # measured sessions (all three carry token usage) appear, heaviest first
+        assert '`s0`' in board and '`s1`' in board
+        # s0/s1 (4,000 input tok) rank above s2 (500)
+        assert board.index('`s2`') > board.index('`s0`')
+
+    def test_findings_include_fix_and_verify(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        md = render_report(data, repo)
+        assert '→ fix:' in md
+        assert '→ verify:' in md
+        # the verify line for repeated-reads mentions a referee/compare command
+        assert 'cram audit --compare' in md or 'cram rig' in md
+
+
+class TestSessionIdent:
+    def test_extracts_uuid_from_codex_rollout(self):
+        from cram.audit_events import _session_ident
+        p = '/x/.codex/sessions/2026/06/15/rollout-2026-06-15T21-42-47-019ece4f-5b3f-7e80-bd46-5cc7f20fac4f.jsonl'
+        assert _session_ident(p) == '019ece4f-5b3f-7e80-bd46-5cc7f20fac4f'
+
+    def test_claude_bare_uuid(self):
+        from cram.audit_events import _session_ident
+        p = '/x/.claude/projects/-r/7ba1f41e-1111-2222-3333-444455556666.jsonl'
+        assert _session_ident(p) == '7ba1f41e-1111-2222-3333-444455556666'
+
+    def test_falls_back_to_stem(self):
+        from cram.audit_events import _session_ident
+        assert _session_ident('/x/s0.jsonl') == 's0'
+
 
 class TestRunReport:
     def test_stdout(self, tmp_path, monkeypatch, capsys):

@@ -43,6 +43,28 @@ cram gives that waste a profile.
 
 ---
 
+## How cram is different
+
+General LLM observability tools show traces, latency, request cost, and app-level quality
+signals. cram is narrower: it profiles coding-agent work loops from local transcripts and
+explains why an agent spent tokens before making useful progress.
+
+It speaks in developer-native waste classes:
+
+- startup context
+- orientation before first edit
+- repeated file reads
+- oversized tool output carried forward
+- retry loops and failed commands
+- same-file edit churn
+- cache blind spots
+- optimizer-on vs optimizer-off
+
+The goal is not only "what did this cost?" It is "why did the agent spend that much, what
+would reduce it, and did that fix preserve task success?"
+
+---
+
 ## What it does
 
 **1. Profiles real agent transcripts**
@@ -131,6 +153,19 @@ context only. The context layer showed no orientation benefit on any cell tested
 | #3571 localized | 6 → 8 | 50,785 → 56,481 |
 | #2786 explicit | 33 → 39 | 150,990 → 128,030 |
 | #2786 natural | 26 → 28 | 146,227 → 138,722 |
+
+**Codex, controlled rig (oracle-backed, reproducible):** `cram rig --runner codex` on the
+#2786 corpus, 3 reps per arm, comparing tokens only among runs that pass the success oracle:
+
+| Arm | Pass rate | Passing-run eff. tokens |
+|---|---|---|
+| baseline | 2/3 | 2.87M, 1.70M |
+| cram | 1/3 | 2.74M |
+
+The one passing cram run was marginally cheaper than the comparable baseline run — but cram
+**failed 2 of 3 runs vs the baseline's 1**, so it loses on the metric that comes first: pass
+rate. A token saving that costs you task success is not a win. Reproduce with
+`cram rig corpus-click-2786.json --runner codex`.
 
 So the generated repo briefing / auto-excerpts should **not** be pitched as a universal token
 reducer: it helped one localized Claude case and was neutral-to-negative everywhere else

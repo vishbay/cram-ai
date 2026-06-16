@@ -7,8 +7,9 @@
 **The profiler and referee for AI coding-agent tokens.**
 
 cram tells you where Claude Code, Cursor, and Codex sessions spend tokens, points at
-avoidable waste, and verifies whether a context optimization actually helped at equal task
-success.
+avoidable waste, and verifies whether an optimization actually helped at equal task
+success. It is a profiler first and a referee second: measure the run, name the waste,
+then prove whether any proposed fix helped without lowering task success.
 
 Most token tools promise savings. cram asks the useful engineering question:
 
@@ -37,8 +38,8 @@ cram gives that waste a profile.
 | Which sessions are wasting orientation tokens? | `cram audit` |
 | Which files get re-read across sessions? | `cram audit --report` |
 | Did cram context, claude-context, or another optimizer help? | `cram rig ...` |
-| Is my repo context stale or too large? | `cram status` |
-| Can my agent load focused task context? | `get_context()` or `cram task "..."` |
+| Did a real session use fewer tokens after a change? | `cram audit --compare A B` |
+| Is optional repo context stale or too large? | `cram status` |
 
 ---
 
@@ -70,7 +71,13 @@ Findings are deterministic rules, not LLM judgment. Examples:
 | Retry loop | failed commands or repeated same-file edits | record gotcha / improve task recipe |
 | Context growth | late turns keep paying for old output | trim results / tune compaction |
 
-**3. Ships one fix: a repo context layer**
+**3. Referees optimizers**
+
+`cram rig` compares token usage at fixed success. If an optimization saves tokens by failing
+the task, cram does not count that as a win. It can test cram's own context layer, a third-party
+optimizer, or no optimizer at all.
+
+**4. Offers an optional repo context layer**
 
 cram can maintain a small `.ai-context/` directory with:
 
@@ -83,10 +90,9 @@ cram can maintain a small `.ai-context/` directory with:
 Agents can load that context through MCP (`get_context()`) or file-based startup rules
 (`cram task "..." --target codex`, `--target cursor`, etc.).
 
-**4. Verifies optimizers**
-
-`cram rig` compares token usage at fixed success. If an optimization saves tokens by failing
-the task, cram does not count that as a win.
+This layer is experimental as a token-saving mechanism. Use it when audits show repeated
+re-discovery or when you have durable human knowledge to share with agents; verify it with
+`cram rig` or `cram audit --compare` before treating it as a win.
 
 ---
 
@@ -95,7 +101,11 @@ the task, cram does not count that as a win.
 The repo includes a reproducible case study against `pallets/click`; see
 [CASE_STUDY.md](CASE_STUDY.md) and [CASE_STUDY_RUNBOOK.md](CASE_STUDY_RUNBOOK.md).
 
-One result from a localized Click bug, using Claude Code headless with equal task success:
+The useful result is not "cram context always saves tokens." It does not. The useful result is
+that cram can show exactly when an optimization helped, did nothing, or made the run worse.
+
+One Claude Code case-study arm on a localized Click bug showed less re-discovery at equal task
+success:
 
 | Metric | No cram | cram context | Change |
 |---|---:|---:|---:|
@@ -106,17 +116,36 @@ One result from a localized Click bug, using Claude Code headless with equal tas
 | Startup context | 18,180 | 20,904 | +2,724 |
 | Task success | 3/3 | 3/3 | unchanged |
 
-This is a case study, not a universal claim. It shows the tradeoff cram is designed to make
-visible: pre-loading context has a startup cost, but can reduce re-discovery and shorten
-agent runs when the task needs orientation.
+But the same context layer did **not** help elsewhere — measured the same way (per-session
+`cram audit`, same pinned commit, equal-ish task success):
 
-cram is usually strongest for:
+**Claude, central-hub bug (#2786):** the fix spans click's 3k-line `core.py`, so pre-loaded
+*excerpts* didn't substitute for reading the hub. Re-reads stayed flat (~14×→~13×) and peak
+context rose (+10%). Net neutral-to-negative.
+
+**Codex (N=1 per cell, directional):** Codex reads go through shell, so compare orientation and
+context only. The context layer showed no orientation benefit on any cell tested:
+
+| Cell | Reads before first edit | Peak context |
+|---|---|---|
+| #3571 localized | 6 → 8 | 50,785 → 56,481 |
+| #2786 explicit | 33 → 39 | 150,990 → 128,030 |
+| #2786 natural | 26 → 28 | 146,227 → 138,722 |
+
+So the generated repo briefing / auto-excerpts should **not** be pitched as a universal token
+reducer: it helped one localized Claude case and was neutral-to-negative everywhere else
+measured. The manual `DECISIONS.md` / `GOTCHAS.md` path — humans recording non-greppable
+project knowledge — is a **separate, still-untested** claim. Full per-session numbers, including
+these, are in [CASE_STUDY.md](CASE_STUDY.md).
+
+The context layer is most plausible for:
 
 - unfamiliar repos
 - natural-language bug reports where the exact file is not obvious
 - long-running or autonomous agent loops
 - repeated work in the same codebase
 - multi-agent fan-out where every agent would otherwise rediscover the same context
+- tacit project knowledge that cannot be inferred from syntax
 
 It is weaker, and sometimes neutral or negative, for:
 
@@ -154,7 +183,22 @@ cram audit
 cram audit --report
 ```
 
-If the audit shows repeated re-discovery, initialize the context layer:
+Then verify changes with the referee. A controlled corpus compares optimizers only among runs
+that still pass the task oracle:
+
+```bash
+cram rig <corpus.json> --providers baseline,cram --dry-run
+cram rig <corpus.json> --providers baseline,cram
+```
+
+For real before/after sessions:
+
+```bash
+cram audit --compare ../before ../after
+```
+
+If the audit shows repeated re-discovery, or you have durable project knowledge agents keep
+missing, you can try the optional context layer:
 
 ```bash
 cram init
@@ -189,7 +233,7 @@ cram task "fix the rate limiter" --target cursor
 cram task "fix the rate limiter" --target claude
 ```
 
-After a few sessions, measure again:
+After a few sessions, measure again. Keep it only if it earns its keep:
 
 ```bash
 cram audit
@@ -272,9 +316,10 @@ caused the cost.
 
 ## Context layer
 
-The context layer is **optional** — it is one remediation among several, not required to use
-cram. Reach for it only when your audit shows repeated re-discovery; the audit and `cram rig`
-work without it. It is a repo-local memory system for agents.
+The context layer is **optional and experimental as an optimizer**. It is one remediation
+among several, not required to use cram. Reach for it when your audit shows repeated
+re-discovery, or when agents need durable repo knowledge that is not obvious from code search.
+The audit and `cram rig` work without it.
 
 ```text
 .ai-context/
@@ -288,13 +333,14 @@ work without it. It is a repo-local memory system for agents.
 `cram init` creates the directory. `cram sync` refreshes generated files. A post-commit hook
 can run sync automatically.
 
-The highest-value files are usually the manual ones:
+The highest-value files are expected to be the manual ones:
 
 - `DECISIONS.md`: "we use cursor pagination", "never call this API directly"
 - `GOTCHAS.md`: "users.email is nullable in prod", "this test needs PYTHONPATH=src"
 
 Those facts are not discoverable from syntax alone, which is why they remain useful even as
-models get larger context windows.
+models get larger context windows. This curated-knowledge claim is separate from the
+auto-orientation claim and should be tested independently on tacit-knowledge tasks.
 
 When `get_context("task")` or `cram task "task"` runs, cram:
 
@@ -304,7 +350,8 @@ When `get_context("task")` or `cram task "task"` runs, cram:
 4. writes `CURRENT_TASK.md`
 
 The goal is not to prevent the agent from reading files. The goal is to reduce blind
-re-discovery and preload durable project knowledge.
+re-discovery and preload durable project knowledge. Treat the generated briefing and excerpts
+as a candidate fix, not a guaranteed savings layer.
 
 ---
 
@@ -410,6 +457,7 @@ oracle.
 ```bash
 cram rig <corpus.json> --providers baseline,cram,claude-context
 cram rig <corpus.json> --dry-run
+cram rig <corpus.json> --runner codex
 cram rig --observe cram --days 30
 ```
 
@@ -429,8 +477,9 @@ Providers:
 | `claude-context` | third-party semantic code-search MCP |
 | `headroom`, `context-mode` | stubs that report what wiring is missing |
 
-Controlled live runs currently use Claude Code headless (`claude -p`) and reuse the existing
-Claude Code login. Other agent runners can be added behind the same corpus/oracle interface.
+Controlled live runs can use Claude Code headless (`claude -p`) or Codex noninteractive mode
+(`codex exec`) and reuse the existing CLI login. More agent runners can be added behind the
+same corpus/oracle interface.
 
 ---
 
@@ -606,10 +655,11 @@ context-model routing should use `~/.config/cram-ai/settings.json`.
 cram is not an automatic universal token reducer.
 
 It will not magically make every agent run cheaper. It gives you measurements, points at
-avoidable patterns, provides one context-layer fix, and lets you verify whether that fix or a
-third-party optimizer actually helped.
+avoidable patterns, and lets you verify whether cram's optional context layer, a third-party
+optimizer, or a config change actually helped.
 
-That is the product boundary: profiler, context memory, and referee.
+That is the product boundary: profiler and referee first; context memory is optional and must
+be measured.
 
 ---
 

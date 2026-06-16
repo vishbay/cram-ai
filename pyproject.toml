@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cram-ai"
-version = "0.6.1"
+version = "0.6.2"
 description = "The profiler and referee for AI coding-agent tokens — audit where agent spend goes from real transcripts, get evidence-backed fixes, and verify any optimization actually worked"
 readme = "README.md"
 license = "Apache-2.0"

@@ -15,3 +15,6 @@ venv/
 .cram-ai-context/CURRENT_TASK.md
 .vscode/
 .claude/settings.local.json
+
+# Generated audit reports
+cram-audit-report.html

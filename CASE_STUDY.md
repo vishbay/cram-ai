@@ -18,6 +18,28 @@ context layer reduces that waste **at equal task success**.
 
 ---
 
+## Where cram should help
+
+The expected savings depend on how much orientation the agent must do. These
+are rough workflow estimates for AI-assisted coding tasks, not a universal
+benchmark:
+
+| Issue / task type | Share of agentic coding work | Expected cram impact |
+|---|---:|---:|
+| Exact file + exact test known | 20–30% | Low: −5% to +10% |
+| Natural issue, likely area known but not exact fix | 35–45% | Strong: 20–50% savings |
+| Large unfamiliar repo / vague bug | 10–20% | Very strong: 30–60%+ savings |
+| Tiny obvious one-file task | 10–15% | Neutral or negative |
+| Long-running multi-step agent task | 10–20% | Mixed: helps orientation; output/context bloat still needs separate fixes |
+| Repeated sessions / multi-agent same repo | 5–15% | High cumulative value |
+
+The useful product claim is therefore scoped: cram should help most when a
+natural issue description forces the agent to discover repo structure and likely
+files. It may be neutral or worse when the prompt already names the exact file,
+test, and fix location.
+
+---
+
 ## Profiler — where the tokens go
 
 ### Issue #3571 · localized bug (`_termui_impl.py`) · N=3 ✓
@@ -138,6 +160,25 @@ on one runner here.
 human-curated tacit-knowledge half (facts an agent cannot grep) was **not tested**, so it is
 neither supported nor refuted here. The honest conclusion: lead with the **audit + referee**;
 treat the context layer as optional, and as unproven for auto-orientation specifically.
+
+### Issue #2786 · Codex · natural prompt · N=1 per arm · equal success
+
+To test the workflow-fit hypothesis above, the Codex arm used a more natural
+issue prompt: it described the shared-option/callback bug but did not name
+`core.py` or the exact regression test. The hidden oracle still checked the
+focused regression test with `PYTHONPATH=src`.
+
+| Arm | Success | Effective tokens | Requests | Peak ctx |
+|---|---:|---:|---:|---:|
+| baseline | 1/1 | 2,484,265 | 42 | 146,227 |
+| cram context in `AGENTS.md` | 1/1 | 1,304,527 | 24 | 138,722 |
+| **Δ** | unchanged | **−47.5%** | **−43%** | **−5%** |
+
+**Read:** cram helped when the prompt left real orientation work to the agent.
+Both arms passed, but the cram arm converged in fewer requests, with fewer edits
+and no tool errors. This contrasts with over-specified Codex prompts that named
+the exact file/test: those also passed, but cram was slightly more expensive
+because the extra context overhead outweighed navigation savings.
 
 ---
 

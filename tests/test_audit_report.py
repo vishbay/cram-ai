@@ -107,25 +107,52 @@ class TestRenderReport:
         # the verify line for repeated-reads mentions a referee/compare command
         assert 'cram audit --compare' in md or 'cram rig' in md
 
-    def test_token_waterfall_renders(self, tmp_path, monkeypatch):
+    def test_token_waterfall_tree_renders(self, tmp_path, monkeypatch):
         repo = _rich_repo(tmp_path, monkeypatch)
         data = collect_audit(repo, days=365)
         md = render_report(data, repo)
         assert '## Token waterfall' in md
         assert '**Measured spine**' in md
+        assert 'Children sum to their parent' in md
         assert 'fresh input' in md and 'cache read' in md and 'cache write' in md
+        # composition × pre/post-edit tree
+        assert 'pre-edit' in md and 'post-edit' in md
         # the estimated overlays must be explicitly non-summing
         assert 'do **not** sum to the spine' in md
         assert 'estimated (tokens/file model)' in md
+
+    def test_spine_tree_reconciles(self, tmp_path, monkeypatch):
+        repo = _rich_repo(tmp_path, monkeypatch)
+        data = collect_audit(repo, days=365)
+        tree = data['spine_tree']
+        # children sum to parent; pre never exceeds its component
+        assert abs(sum(c['eff'] for c in tree['components']) - tree['total']) < 1e-6
+        for c in tree['components']:
+            assert 0 <= c['pre'] <= c['eff'] + 1e-9
+        # fixture: measured edit sessions s0(4000)+s1(4000) fresh; pre 3000+2000
+        fresh = next(c for c in tree['components'] if c['label'] == 'fresh input')
+        assert fresh['eff'] == 8000 and fresh['pre'] == 5000
+        assert tree['total'] == 8000   # read-only s2 (500) excluded
 
     def test_token_spine_components_sum_to_total(self, tmp_path, monkeypatch):
         repo = _rich_repo(tmp_path, monkeypatch)
         data = collect_audit(repo, days=365)
         sp = data['token_spine']
         assert sp['cache_read'] + sp['fresh_input'] + sp['cache_write'] == sp['total']
-        # fixture has only fresh input (3000+1000+2000+2000+500)
+        # all-sessions spine includes read-only s2 (3000+1000+2000+2000+500)
         assert sp['fresh_input'] == 8500
         assert sp['total'] == 8500
+
+    def test_waterfall_falls_back_to_composition_when_no_edit_sessions(self, tmp_path, monkeypatch):
+        # read-only sessions only → no measured edit pool → composition-only spine
+        _setup(tmp_path, monkeypatch, [
+            [_tool('Read', {'file_path': 'a.py'}), _usage(input_tokens=1000)],
+        ])
+        data = collect_audit(str(tmp_path), days=365)
+        md = render_report(data, str(tmp_path))
+        assert data['spine_tree'] is None
+        assert 'composition (all sessions)' in md
+        assert 'pre-edit' not in md.split('## Token waterfall')[1].split('## ')[0]
 
 
 class TestSessionIdent:

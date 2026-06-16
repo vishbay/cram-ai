@@ -83,6 +83,38 @@ class TestProviders:
     def test_get_provider_known(self):
         assert rig.get_provider('baseline').name == 'baseline'
 
+    def test_cram_provider_targets_codex_for_codex_runner(self):
+        providers = rig._configure_providers_for_runner([rig.CramAdapter()], 'codex')
+        assert providers[0].target == 'codex'
+
+    def test_cram_setup_passes_target_when_configured(self, tmp_path, monkeypatch):
+        calls = {}
+
+        def fake_run(argv, **kw):
+            calls['argv'] = argv
+            calls['cwd'] = kw.get('cwd')
+
+            class Result:
+                returncode = 0
+            return Result()
+
+        monkeypatch.setattr(rig.subprocess, 'run', fake_run)
+        rig.CramAdapter(target='codex').setup(rig.Task('a', 'do it'), str(tmp_path))
+        assert calls['argv'] == ['cram', 'task', 'do it', '--target', 'codex']
+        assert calls['cwd'] == str(tmp_path)
+
+    def test_cram_setup_falls_back_to_existing_context(self, tmp_path, monkeypatch):
+        def fake_run(*args, **kwargs):
+            class Result:
+                returncode = 1
+            return Result()
+
+        monkeypatch.setattr(rig.subprocess, 'run', fake_run)
+        monkeypatch.setattr(rig.CramAdapter, '_write_existing_context',
+                            lambda self, workdir: True)
+        setup = rig.CramAdapter(target='codex').setup(rig.Task('a', 'do it'), str(tmp_path))
+        assert setup['CRAM_CONTEXT_FALLBACK'] == 'existing'
+
 
 # ── Oracle ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +145,24 @@ class TestEffectiveTokens:
         p = str(tmp_path / 's.jsonl')
         _write_transcript(p, [{'type': 'tool_use', 'name': 'Read', 'input': {}}])
         assert rig.effective_tokens(p) == 0.0
+
+    def test_codex_transcript_weights_cache_traffic(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('CRAM_PROVIDER', 'anthropic')
+        d = tmp_path / '.codex' / 'sessions'
+        d.mkdir(parents=True)
+        p = str(d / 's.jsonl')
+        _write_transcript(p, [
+            {'type': 'session_meta', 'payload': {'cwd': str(tmp_path)}},
+            {'type': 'event_msg', 'payload': {'type': 'token_count', 'info': {
+                'last_token_usage': {
+                    'input_tokens': 100,
+                    'cached_input_tokens': 1_000,
+                    'output_tokens': 50,
+                },
+            }}},
+        ])
+        # Codex reports cached input as cache-read traffic: 100 + 1000*0.10
+        assert rig.effective_tokens(p) == pytest.approx(200.0)
 
 
 # ── Run loop + summary ──────────────────────────────────────────────────────
@@ -220,6 +270,44 @@ class TestLiveRunner:
         r = rig.LiveRunner(agent_cmd=('myagent', '--headless'))
         assert r.available().ok
         r.run(rig.Task('a', 'x'), {}, str(tmp_path))  # no raise
+
+
+class TestCodexRunner:
+    def test_available_requires_codex_cli(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: None)
+        av = rig.CodexRunner().available()
+        assert not av.ok and 'codex' in av.reason.lower()
+
+    def test_available_when_cli_present(self, monkeypatch):
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/usr/local/bin/codex')
+        assert rig.CodexRunner().available().ok
+
+    def test_run_invokes_codex_exec_and_returns_transcript(self, tmp_path, monkeypatch):
+        calls = {}
+        monkeypatch.setattr(rig.shutil, 'which', lambda exe: '/bin/codex')
+        monkeypatch.setattr(rig.time, 'time', lambda: 123.0)
+
+        def fake_run(argv, **kw):
+            calls['argv'] = argv
+            calls['cwd'] = kw.get('cwd')
+            return None
+
+        monkeypatch.setattr(rig.subprocess, 'run', fake_run)
+        monkeypatch.setattr(rig, '_newest_codex_transcript_for',
+                            lambda wd, since=0.0: str(tmp_path / 'c.jsonl'))
+        out = rig.CodexRunner().run(rig.Task('a', 'do the thing'), {}, str(tmp_path))
+        assert out == str(tmp_path / 'c.jsonl')
+        assert calls['argv'] == [
+            'codex', 'exec',
+            '--sandbox', 'workspace-write',
+            '--skip-git-repo-check',
+            '--cd', str(tmp_path),
+            'do the thing',
+        ]
+        assert calls['cwd'] == str(tmp_path)
+
+    def test_make_runner_selects_codex(self):
+        assert isinstance(rig._make_runner('codex'), rig.CodexRunner)
 
 
 # ── claude-context adapter ───────────────────────────────────────────────────

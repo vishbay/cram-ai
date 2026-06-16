@@ -154,6 +154,19 @@ context only. The context layer showed no orientation benefit on any cell tested
 | #2786 explicit | 33 → 39 | 150,990 → 128,030 |
 | #2786 natural | 26 → 28 | 146,227 → 138,722 |
 
+**Codex, controlled rig (oracle-backed, reproducible):** `cram rig --runner codex` on the
+#2786 corpus, 3 reps per arm, comparing tokens only among runs that pass the success oracle:
+
+| Arm | Pass rate | Passing-run eff. tokens |
+|---|---|---|
+| baseline | 2/3 | 2.87M, 1.70M |
+| cram | 1/3 | 2.74M |
+
+The one passing cram run was marginally cheaper than the comparable baseline run — but cram
+**failed 2 of 3 runs vs the baseline's 1**, so it loses on the metric that comes first: pass
+rate. A token saving that costs you task success is not a win. Reproduce with
+`cram rig corpus-click-2786.json --runner codex`.
+
 So the generated repo briefing / auto-excerpts should **not** be pitched as a universal token
 reducer: it helped one localized Claude case and was neutral-to-negative everywhere else
 measured. The manual `DECISIONS.md` / `GOTCHAS.md` path — humans recording non-greppable

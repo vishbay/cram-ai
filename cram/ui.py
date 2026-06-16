@@ -822,6 +822,7 @@ def _build_app(root: str):  # noqa: ANN202
         AuditPane, ReportPane, LayersPane, DecisionsPane, SessionsPane,
         HealthPane, ActionsPane {
             padding: 1 2;
+            height: 1fr;
         }
         Label#pending-header, Label#accepted-header, Label#slots-header,
         Label#output-header {

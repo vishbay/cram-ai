@@ -26,7 +26,6 @@ cram/suggest.py: suggest_task
 cram/symbols.py: extract_symbols, write_symbols_md
 cram/sync_context.py: get_git_diff, update_architecture_md, reset_task, sync, main
 cram/targets.py: load_custom_targets, get_effective_targets, get_effective_indicators, load_output_config, load_default_target, save_default_target, detect_targets, write_to_target, write_to_all_detected
-cram/ui.py: main
 cram/usage.py: measured_usage
 cram/utils.py: load_settings, save_settings, discover_models, pick_context_model, pick_coding_model, cache_min_tokens, get_model_recommendations, call_context_model, call_model, find_git_root, strip_code_fence
 examples/rig/fixtures/add-cli-flag/app.py: main
@@ -57,6 +56,5 @@ tests/test_status.py: TestStalenessScore, TestStalenessBand, TestGetStatusDictBa
 tests/test_symbols.py: TestByteStability
 tests/test_sync.py: TestGetGitDiff, TestUpdateArchitectureMd, TestSync
 tests/test_targets.py: TestUpsertCramSectionRegexSafe, TestSaveLoadDefaultTarget, TestDetectTargets, TestWriteToTarget, TestCustomTargets
-tests/test_ui_smoke.py: empty_repo, TestUiSmoke
 tests/test_usage.py: test_missing_dir_returns_none, test_sums_match_fixture, test_malformed_lines_skipped, test_old_files_excluded
 tests/test_utils.py: TestStripCodeFence, TestCallModelRouting, TestCallViaLitellmMissing, TestProxyHeaders, TestProbeLmStudio, TestCallViaOpenaiCompat, TestCallViaGemini, TestCallContextModelRouting, TestDiscoverModelsLmStudio, TestPickContextModel

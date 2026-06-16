@@ -29,7 +29,6 @@ Core Python package containing main functionality:
 - `gotcha.py` - Non-obvious trap documentation; append to GOTCHAS.md
 - `recommend.py` - Optimization recommendations registry; typed waste-class detectors and fixes
 - `rig.py` - Testing framework for agentic optimizer verification (task corpus, fixtures, providers, runners, oracle)
-- `ui.py` - Textual TUI dashboard for decisions, sessions, health, task history, and command execution
 - `benchmark.py` - Cache-write cost modeling and token savings benchmarking
 - `cost_model.py` - Multi-provider pricing model; orientation cost computation with provider selection
 - `utils.py` - Shared utilities: model discovery, LLM routing (Claude CLI / Ollama / OpenAI-compat / Gemini), Ollama timeout handling
@@ -60,7 +59,6 @@ Test suite for the package functionality, including audit aggregate/report cover
 - **Configuration Format**: JSON (Claude settings), TOML (cram config)
 - **Package Management**: pip / setuptools
 - **Testing**: pytest
-- **TUI**: Textual (optional, cram[tui])
 - **Database**: SQLite (audit store, optional)
 
 ## Primary Features
@@ -81,7 +79,6 @@ Test suite for the package functionality, including audit aggregate/report cover
 - **Optimization recommendations**: Typed waste-class detectors with recommended fixes
 - **Carried-output loop** (Option A, advisory-tightening): Detect oversized tool results, auto-tighten `[output]` caps in config, verify with `cram rig --observe`
 - **Agentic testing framework (cram rig)**: Verify optimizer correctness via task corpus, fixture execution, and oracle validation
-- **Interactive TUI dashboard** (5 tabs): Decisions, Sessions, Health, History, Actions; auto-refresh every 30s
 - **Structure-hash deduplication**: Skip ARCHITECTURE.md LLM regeneration when repo structure is unchanged
 - **Staleness bands**: Map freshness scores to fresh, acceptable, stale, and critical; ARCHITECTURE.md staleness only advances on structure-changing commits
 - Task history archiving (per-session task invocations with timestamps)
@@ -109,7 +106,6 @@ CLI commands dispatched through unified `cram` entry point:
 - `cram doctor [path]` - Check setup: models, hooks, git, context files
 - `cram hook install|uninstall [path]` - Manage git post-commit and commit-msg hooks
 - `cram mcp [--repo PATH]` - Start MCP server (stdio) for Claude Code / agents
-- `cram ui [path]` - Launch TUI dashboard (requires cram-ai[tui])
 
 ## Context Directory
 
@@ -139,8 +135,7 @@ Shared context files (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.
 All Python dependencies specified in `requirements.txt` and `pyproject.toml`. Install with `pip install -e .` or `pip install cram-ai`.
 
 Optional extras:
-- `cram[tui]` - Textual dashboard (depends on textual>=0.80)
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 2df131444328c8a1a57d0864ea997813745bcd704ad06bac0eea4007d2cec1e1 -->
+<!-- cram:structure-hash fafef76844e4f405ffae41406e792670ee408aeabc0db6a364d94689d10a589b -->

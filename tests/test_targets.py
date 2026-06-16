@@ -15,8 +15,32 @@ from cram.targets import (
     CRAM_SECTION_START,
     CRAM_SECTION_END,
 )
+from cram.targets import _upsert_cram_section
 
 CONTEXT_DIR = '.ai-context'
+
+
+# ---------------------------------------------------------------------------
+# _upsert_cram_section — regression: injected code excerpts may contain
+# regex-special sequences (backslashes, \1, \g<0>) that must not be
+# interpreted as re.sub replacement escapes. (Found via the click case study,
+# where `cram task --target claude --inject` crashed on core.py excerpts.)
+# ---------------------------------------------------------------------------
+
+class TestUpsertCramSectionRegexSafe:
+    def test_inject_with_backslashes_and_group_refs(self, tmp_path):
+        p = tmp_path / 'CLAUDE.md'
+        p.write_text(f'{CRAM_SECTION_START}\nold\n{CRAM_SECTION_END}\n')
+        nasty = r'def f(): return re.sub(r"\1\g<0>", x)  # \\ and \1'
+        _upsert_cram_section(str(p), nasty)
+        out = p.read_text()
+        assert nasty.rstrip() in out          # written literally, not interpreted
+        assert out.count(CRAM_SECTION_START) == 1   # replaced, not duplicated
+
+    def test_creates_file_when_absent(self, tmp_path):
+        p = tmp_path / 'CLAUDE.md'
+        _upsert_cram_section(str(p), 'hello')
+        assert 'hello' in p.read_text()
 
 
 # ---------------------------------------------------------------------------

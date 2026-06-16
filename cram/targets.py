@@ -248,9 +248,13 @@ def _upsert_cram_section(path: str, inner_content: str) -> None:
     if os.path.exists(path):
         existing = open(path).read()
         if CRAM_SECTION_START in existing:
+            # Replacement passed as a function so backslashes / group-like
+            # sequences in injected code excerpts are written literally instead
+            # of being interpreted as re.sub escapes (which raised on inject).
+            replacement = block.rstrip('\n')
             updated = re.sub(
                 rf'{re.escape(CRAM_SECTION_START)}.*?{re.escape(CRAM_SECTION_END)}',
-                block.rstrip('\n'),
+                lambda _m: replacement,
                 existing,
                 flags=re.DOTALL,
             )

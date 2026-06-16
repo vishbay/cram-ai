@@ -53,7 +53,7 @@ tests/test_rig_fixtures.py: mean, median, main, test_corpus_loads_and_fixtures_e
 tests/test_status.py: TestStalenessScore, TestStalenessBand, TestGetStatusDictBackCompat, git_repo, TestGetStatusDictIntegration, TestStructureHashFreshness
 tests/test_symbols.py: TestByteStability
 tests/test_sync.py: TestGetGitDiff, TestUpdateArchitectureMd, TestSync
-tests/test_targets.py: TestSaveLoadDefaultTarget, TestDetectTargets, TestWriteToTarget, TestCustomTargets
+tests/test_targets.py: TestUpsertCramSectionRegexSafe, TestSaveLoadDefaultTarget, TestDetectTargets, TestWriteToTarget, TestCustomTargets
 tests/test_ui_smoke.py: empty_repo, TestUiSmoke
 tests/test_usage.py: test_missing_dir_returns_none, test_sums_match_fixture, test_malformed_lines_skipped, test_old_files_excluded
 tests/test_utils.py: TestStripCodeFence, TestCallModelRouting, TestCallViaLitellmMissing, TestProxyHeaders, TestProbeLmStudio, TestCallViaOpenaiCompat, TestCallViaGemini, TestCallContextModelRouting, TestDiscoverModelsLmStudio

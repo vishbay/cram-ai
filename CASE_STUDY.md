@@ -79,27 +79,65 @@ first edit moves turn 5→3 and turns drop ~44%. Re-reads ~halved but with sprea
 pre-loading adds ~2.7k startup tokens, so peak only drops ~10% despite turns
 nearly halving — that fixed cost amortizes better on larger tasks.
 
-### Issue #2786 · sonnet · N=3 per arm
+### Issue #2786 · sonnet · N=2 before / N=3 after — equal-ish success (fixes produced)
 
-**Valid before/after pending a re-run.** The first after-arm attempt was
-**invalid** and surfaced a real cram bug instead: `cram task --target claude
---inject` selected the right file (`core.py · Option, Parameter,
-full_process_value`) but then **crashed** writing it — `_upsert_cram_section`
-passed code excerpts as the `re.sub` replacement string, so backslash/`\1`-style
-sequences in `core.py` raised an escape error. Only the cram **MCP pointer** was
-left in `CLAUDE.md` (591 B), so the "after" agent got **no context**. As
-expected with no context delivered, the runs matched/worsened the baseline:
+The valid re-run (after the `--inject` bug fix, 6.7 KB context delivered). This is the
+**honest negative**: for a central-hub bug, the context layer did **not** help.
 
-| Session (no context delivered — **invalid**) | Requests | Peak ctx | Re-reads `core.py` | First edit |
-|---|---|---|---|---|
-| `9d42fa08` | 68 | 83,176 | 13× | turn 34 |
-| `d5220339` | 64 | 86,329 | 13× | turn 26 |
-| `128b8cbf` | 41 | 69,766 | 12× | turn 34 |
+**BEFORE — no cram (N=2 valid; +1 truncated, excluded)**
+| Session | Req | First | Peak | Reads before edit | `core.py` re-reads |
+|---|---:|---:|---:|---:|---:|
+| `6342a339` | 33 | 18,163 | 56,978 | 27 | 13× |
+| `04614317` | 37 | 18,163 | 62,117 | 28 | 15× |
+| **mean** | **35** | **18,163** | **59,548** | **~28** | **~14×** |
 
-**Bug fixed** (replacement passed as a function so excerpts are written
-literally; regression test added). The valid #2786 before/after — the run most
-likely to show a large gap given the ~14× baseline — is to be re-run with the
-fix live (via the planned alternate agent runner, to avoid Claude rate limits).
+**AFTER — cram context (N=3 valid)**
+| Session | Req | First | Peak | Reads before edit | `core.py` re-reads |
+|---|---:|---:|---:|---:|---:|
+| `c074394e` | 31 | 20,137 | 67,737 | ~23 | 15× |
+| `7b850fb3` | 32 | 20,109 | 62,896 | ~19 | 12× |
+| `12b8045f` | 29 | 20,137 | 65,926 | ~19 | 13× |
+| **mean** | **30.7** | **20,128** | **65,520** | **~20** | **~13×** |
+
+**Δ:** requests −12%, reads-before-edit ~28→~20, but **`core.py` re-reads flat (~14×→~13×)**
+and **peak context +10% (worse)**. Why: the fix spans click's 3k-line `core.py`; pre-loaded
+*excerpts* don't substitute for reading the hub, so the agent re-read it just as much and the
+pre-loaded context only added to the total. Cram oriented slightly faster but did not touch
+the dominant waste. **Net neutral-to-negative.**
+
+---
+
+## Cross-runner check (Codex) — N=1 per cell, directional only
+
+Same fixtures, run through Codex CLI instead of `claude -p`. Codex reads are shell-based, so
+there is no `core.py` re-read attribution; compare orientation + context only.
+
+| Cell | Reads before edit (base→cram) | Peak ctx (base→cram) | Verdict |
+|---|---|---|---|
+| #3571 localized | 6 → **8** | 50,785 → **56,481** | no benefit |
+| #2786 explicit | 33 → **39** | 150,990 → 128,030 | mixed |
+| #2786 natural | 26 → 28 | 146,227 → 138,722 | mixed |
+| pilot natural | 31 → **38** | 166,499 → 164,627 | no benefit |
+
+On Codex the context layer never improved orientation (often slightly worse); the only
+consistent effect is lower total context, which did not convert into fewer reads or turns.
+
+---
+
+## What the evidence says
+
+Across ~6 before/after cells (two runners, two issues, prompt variants), **exactly one is a
+clean win** (claude `-p` #3571, a localized bug whose file cram could name). #2786 (central
+hub) is neutral-to-negative on claude; Codex shows no orientation benefit on any cell. So the
+**auto-orientation / excerpt** value of the context layer is **not supported** by these
+results — it helps mainly when the target file is localized and nameable, and even then only
+on one runner here.
+
+**Important scope limit:** every cell exercised the *auto-generated* half
+(`ARCHITECTURE`/`SYMBOLS`/excerpts) with `DECISIONS.md`/`GOTCHAS.md` **empty**. The
+human-curated tacit-knowledge half (facts an agent cannot grep) was **not tested**, so it is
+neither supported nor refuted here. The honest conclusion: lead with the **audit + referee**;
+treat the context layer as optional, and as unproven for auto-orientation specifically.
 
 ---
 

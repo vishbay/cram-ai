@@ -39,7 +39,7 @@ Core Python package containing main functionality:
 - `examples/rig/` - Example task corpus and pre-made fixtures for cram rig testing
 
 ### `docs/`
-- `docs/img/report-tour.gif` - README animated preview for the HTML audit report
+- `docs/img/report-walkthrough.gif` - README animated preview for the HTML audit report
 - `docs/img/report-dark.png` and `docs/img/report-light.png` - Static README screenshots for the HTML audit report in dark and light themes
 
 ### `tests/`
@@ -143,4 +143,4 @@ Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash fd0cb3b7a82f9d062175f97d79c6c841f9c60ec57c251d9c44c115e9a5ecbff7 -->
+<!-- cram:structure-hash 844a47f9762f9e8e69fa2ba554270c5821a040a4679a5fcb7fb9b15f0560ec2c -->

@@ -1,14 +1,18 @@
 """Self-contained HTML report for `cram audit --report-html`.
 
 render_report_html() is a pure function over the same collect_audit() dict the
-markdown report uses, plus a per-layer drilldown map. It emits one standalone
-HTML file — no external CSS, fonts, or JS — so it travels: open locally, attach
-to a PR, drop in Slack. It is the visual surface of what cram can pull for a
-developer: the token waterfall, the findings with fix/verify, the heaviest
-sessions, and the waste layers with their concrete top contributors.
+markdown report uses, plus a per-layer drilldown map and optional per-session
+timelines. It emits one standalone HTML file — no external CSS, fonts, or JS —
+so it travels: open locally, attach to a PR, drop in Slack.
+
+The theme is a restrained dark data dashboard (Datadog / Grafana / GitHub
+Actions logs) with terminal accents: dense scannable tables, monospace data,
+ASCII tree ticks in the waterfall, severity colour only where it earns its
+place, and a measured/estimated/count basis on every number. No glass, no blur
+— cram is an engineering instrument, not an AI command center.
 
 Every number traces to a measured/estimated basis, exactly like the markdown
-report — this renderer only changes the presentation, never the claims.
+report — this renderer only changes presentation, never the claims.
 """
 
 from __future__ import annotations
@@ -29,160 +33,137 @@ _BASE_PRICE = float(os.environ.get(
 _CR_MULT = _P['cache_read_mult']
 _CW_MULT = _P['cache_write_mult']
 
-# Component → bar colour class (CSS vars defined per theme below).
-_COMP_CLASS = {
-    'cache read':  ('wf-cr', 'wf-cr-pre', 'wf-cr-po'),
-    'fresh input': ('wf-fr', 'wf-fr-pre', 'wf-fr-po'),
-    'cache write': ('wf-cw', 'wf-cw', 'wf-cw'),
-}
-_COMP_VAR = {'cache read': 'var(--wf-cr)', 'fresh input': 'var(--wf-fr)',
-             'cache write': 'var(--wf-cw)'}
+# Component → bar colour class (CSS classes defined per theme below).
+_COMP_CLS = {'cache read': ('cr', 'crp', 'crq'),
+             'fresh input': ('fr', 'frp', 'frq'),
+             'cache write': ('cw', 'cw', 'cw')}
+_COMP_GRAD = {'cache read': '#5b9dff', 'fresh input': '#3fb950', 'cache write': '#d29922'}
 
-# Layer → (human description, how to read the drilldown rows).
 _LAYER_DESC = {
     'orientation': 'reads before first edit',
     'repeated':    'files re-read across sessions',
     'redundant':   'files re-read within a session',
     'churn':       'files re-edited within a session',
-    'carried':     'oversized tool output re-read every turn',
+    'carried':     'oversized output re-read every turn',
     'retries':     'failed tool calls per session',
 }
 _LAYER_ORDER = ('orientation', 'repeated', 'redundant', 'churn', 'carried', 'retries')
 
 
-# ── small helpers ────────────────────────────────────────────────────────────
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def _esc(s) -> str:
     return html.escape(str(s))
 
 
 def _code(text: str) -> str:
-    """Escape, then turn `backtick spans` into <code> elements."""
     return re.sub(r'`([^`]+)`', r'<code>\1</code>', html.escape(text))
 
 
-def _heat(value: float, mid: float, hi: float) -> str:
-    """CSS class for a leaderboard cell: lo/md/hi by threshold."""
-    if value >= hi:
-        return 'heat-hi'
-    if value >= mid:
-        return 'heat-md'
-    return 'heat-lo'
+def _sev(value: float, mid: float, hi: float) -> str:
+    return 'sev-hi' if value >= hi else ('sev-md' if value >= mid else 'sev-lo')
 
 
-# ── section renderers ────────────────────────────────────────────────────────
+def _spend(data: dict) -> tuple[float, float, float]:
+    """(total input-side spend, $/session, cache-hit %) from the measured spine."""
+    spine = data.get('token_spine') or {}
+    total_eff = spine.get('total', 0) or 0
+    total_spend = total_eff * _BASE_PRICE
+    n = max(1, data['sessions'])
+    raw_cr = (spine.get('cache_read', 0) or 0) / _CR_MULT if _CR_MULT else 0
+    raw_cw = (spine.get('cache_write', 0) or 0) / _CW_MULT if _CW_MULT else 0
+    raw_in = spine.get('fresh_input', 0) or 0
+    denom = raw_cr + raw_cw + raw_in
+    cache_hit = (raw_cr / denom * 100) if denom else 0
+    return total_spend, total_spend / n, cache_hit
+
+
+# ── stat strip ───────────────────────────────────────────────────────────────
+
+def _strip(data: dict) -> str:
+    total_spend, per_session, cache_hit = _spend(data)
+    share = data.get('pre_edit_spend_share')
+    growth = data.get('avg_context_growth')
+    cells = [
+        ('a', f'{share:.0%}' if share is not None else 'n/a', 'pre-edit share'),
+        ('', f'${total_spend:,.2f}', f'est spend {data["days"]}d'),
+        ('g', f'{cache_hit:.0f}%', 'cache hit'),
+        ('a', f'{data["avg_reads_before_edit"]:.1f}', 'reads→edit'),
+        ('r', f'{growth:.1f}×' if growth is not None else '—', 'ctx growth'),
+        ('', f'{data["avg_requests"]:.0f}' if data.get('avg_requests') else '—', 'req/session'),
+    ]
+    out = []
+    for cls, val, lbl in cells:
+        out.append(f'<div class="stat"><div class="stat-v {cls}">{_esc(val)}</div>'
+                   f'<div class="stat-l">{_esc(lbl)}</div></div>')
+    return f'<div class="strip">{"".join(out)}</div>'
+
+
+# ── headline ─────────────────────────────────────────────────────────────────
 
 def _headline(data: dict) -> str:
-    total = data['sessions']
-    if data['pre_edit_spend_share'] is not None:
-        share = data['pre_edit_spend_share']
-        n_meas = data['pre_edit_measured_sessions']
-        eff = data['pre_edit_eff_total_tokens'] or 0
-        prelim = ('<span class="tag">preliminary</span>'
-                  if data.get('pre_edit_preliminary') else '')
-        desc = (f'<strong>{eff:,.0f} effective input tokens</strong> across '
-                f'{n_meas} measured edit session{"s" if n_meas != 1 else ""}. '
-                f'{int(round(share * 100))}% of agent spend goes to '
-                f'context-gathering before the first file edit — descriptive, '
-                f'not all waste. The avoidable portion is in the findings below.')
-        stat = f'<em>{share:.0%}</em>'
+    share = data.get('pre_edit_spend_share')
+    if share is not None:
+        n = data['pre_edit_measured_sessions']
+        eff = data.get('pre_edit_eff_total_tokens') or 0
+        big = f'{share:.0%}'
         unit = 'pre-edit context share'
+        desc = (f'<b>{eff:,.0f} effective input tokens</b> across {n} measured edit '
+                f'session{"s" if n != 1 else ""}. {share:.0%} of agent spend goes to '
+                f'context-gathering before the first file edit — descriptive, not all '
+                f'waste. The avoidable portion is in the findings below.')
     else:
-        stat = '<em>n/a</em>'
-        unit = 'pre-edit share not measurable'
-        prelim = ''
-        desc = ('No edit sessions with token usage in this window — the '
-                'pre-edit share needs measured edit sessions. Estimates and '
-                'counts below are still valid.')
-
-    tags = [
-        f'<span class="tag">{total} session{"s" if total != 1 else ""} total</span>',
-        f'<span class="tag">{data["edit_sessions"]} edit sessions</span>',
-    ]
-    if data['read_only_sessions']:
-        tags.append(f'<span class="tag">{data["read_only_sessions"]} read-only excluded</span>')
-    if data['pre_edit_spend_share'] is not None:
-        tags.append(f'<span class="tag hi">{data["pre_edit_spend_share"]:.0%} pre-edit</span>')
-    if prelim:
-        tags.append(prelim)
-
+        big, unit = 'n/a', 'pre-edit share not measurable'
+        desc = ('No edit sessions with token usage in this window — counts and '
+                'estimates below are still valid.')
     return f"""
-    <section class="section" id="headline">
-      <div class="section-label">Headline</div>
-      <div class="headline-grid">
-        <div>
-          <div class="hl-stat">{stat}</div>
-          <div class="hl-unit">{_esc(unit)}</div>
-        </div>
-        <div>
-          <div class="hl-desc">{desc}</div>
-          <div class="tags">{''.join(tags)}</div>
-        </div>
-      </div>
-    </section>"""
+    <div class="panel"><div class="ph">Headline</div>
+      <div class="pb headline">
+        <div><div class="hl-big">{_esc(big)}</div><div class="hl-u">{_esc(unit)}</div></div>
+        <div class="hl-d">{desc}</div>
+      </div></div>"""
 
+
+# ── coverage ─────────────────────────────────────────────────────────────────
 
 def _coverage(data: dict) -> str:
-    """Measurement coverage + confidence — so a thin report can't be over-trusted."""
     total = data['sessions']
-    measured = data.get('measured_pool_sessions', 0)
-    edit_meas = data.get('pre_edit_measured_sessions', 0)
-    read_only = data.get('read_only_sessions', 0)
-    failures = data.get('parse_failures', 0)
-
-    # source mix from the per-source summaries: (src, n, ...)
     mix = []
     for row in (data.get('projects') or []):
         src, n = row[0], row[1]
-        label = src if src in ('cursor', 'codex') else 'claude'
-        mix.append(f'{label} {n}')
+        mix.append(f'{src if src in ("cursor", "codex") else "claude"} {n}')
     mix_str = ' · '.join(mix) if mix else 'claude'
-
-    def cell(val, label, warn=False):
-        cls = ' warn' if warn else ''
-        return (f'<div class="cov-cell{cls}"><div class="cov-val">{_esc(val)}</div>'
-                f'<div class="cov-label">{_esc(label)}</div></div>')
-
     thin = total < 5
-    cells = [
-        cell(total, 'sessions found', warn=thin),
-        cell(measured, 'with token usage'),
-        cell(edit_meas, 'edit sessions measured', warn=(edit_meas < 5 and edit_meas > 0)),
-        cell(read_only, 'read-only excluded'),
-        cell(failures, 'parse failures', warn=(failures > 0)),
-        cell(mix_str, 'source mix'),
+    items = [
+        (total, 'found'), (data.get('measured_pool_sessions', 0), 'with tokens'),
+        (data.get('pre_edit_measured_sessions', 0), 'edit measured'),
+        (data.get('read_only_sessions', 0), 'read-only excl'),
+        (data.get('parse_failures', 0), 'parse fails'),
     ]
-    thin_note = ('<div class="cov-note warn-text">⚠ Small sample — fewer than 5 '
-                 'sessions. Treat shares as directional, not conclusive.</div>'
-                 if thin else '')
+    chips = ''.join(f'<span><b class="mono">{_esc(v)}</b> <span class="dim">{_esc(l)}</span></span>'
+                    for v, l in items)
+    warn = ('<div class="warnbox">⚠ Small sample — fewer than 5 sessions. Treat shares '
+            'as directional, not conclusive.</div>' if thin else '')
     return f"""
-    <section class="section" id="coverage">
-      <div class="section-label">Coverage &amp; confidence</div>
-      <div class="cov-grid">{''.join(cells)}</div>
-      {thin_note}
-      <div class="cov-legend">
-        <span><span class="dot measured"></span> <b>measured</b> — from token counts in the transcripts</span>
-        <span><span class="dot estimated"></span> <b>estimated</b> — modelled (assumed tokens/file); not a measurement</span>
-        <span><span class="dot count"></span> <b>count</b> — a frequency we trust but do not dollar-cost</span>
+    <div class="panel" id="cov"><div class="ph">Coverage &amp; confidence</div>
+      <div class="pb covbar">{chips}
+        <span class="dim">{_esc(mix_str)}</span>
+        <span class="legend"><span class="b measured">● measured</span> <span class="b estimated">● estimated</span> <span class="b count">● count</span></span>
       </div>
-      <div class="cov-note">Input-side spend is shown throughout. Output-token
-        spend is reported separately (see metrics) and is <b>not</b> included in
-        the waterfall or the waste-layer cost model. Cursor sessions carry file
-        paths but no token data.</div>
-    </section>"""
+      {warn}
+      <div class="note">Input-side spend is shown throughout. Output-token spend is reported
+        separately (see metrics) and is <b>not</b> in the waterfall or cost model. Cursor
+        sessions carry file paths but no token data.</div></div>"""
 
 
-def _wf_row(level: int, glyph: str, label: str, pct_of_total: float,
-            eff: float, fill_var: str, fill_label: str, cost: str = '') -> str:
-    width = max(0.0, min(100.0, pct_of_total * 100))
+# ── waterfall ────────────────────────────────────────────────────────────────
+
+def _wf_row(cls: str, tick: str, label: str, width: float, fill_cls: str,
+            fill_txt: str, tok: float, pct: str, cost: str) -> str:
     return f"""
-        <div class="wf-row level-{level}">
-          <div class="wf-lbl{' root' if level == 0 else ''}"><span class="wf-tree-icon">{_esc(glyph)}</span>{_esc(label)}</div>
-          <div class="wf-track"><div class="wf-fill" style="width:{width:.2f}%; background:{fill_var};">{_esc(fill_label)}</div></div>
-          <div class="wf-tok">{eff:,.0f}</div>
-          <div class="wf-pct">{width:.0f}%</div>
-          <div class="wf-cost">{_esc(cost)}</div>
-        </div>"""
+      <div class="wf-row {cls}"><span class="wf-l{' root' if cls == 'root' else ''}"><span class="tick">{_esc(tick)}</span>{_esc(label)}</span>
+        <div class="wf-bar"><div class="wf-f {fill_cls}" style="width:{max(0, min(100, width)):.2f}%">{_esc(fill_txt)}</div></div>
+        <span class="wf-t">{tok:,.0f}</span><span class="wf-p">{_esc(pct)}</span><span class="wf-c">{_esc(cost)}</span></div>"""
 
 
 def _waterfall(data: dict) -> str:
@@ -191,92 +172,217 @@ def _waterfall(data: dict) -> str:
     spine_total = spine.get('total', 0) or 0
     if not tree and spine_total <= 0:
         return ''
-
-    base_price = data.get('base_price') or _BASE_PRICE
+    base = data.get('base_price') or _BASE_PRICE
     rows = []
     if tree:
         total = tree['total']
         pool = tree['pool_sessions'] or 1
         comps = sorted(tree['components'], key=lambda c: c['eff'], reverse=True)
-        # total bar: gradient across components in display order
         stops, cum = [], 0.0
         for c in comps:
             w = (c['eff'] / total * 100) if total else 0
-            var = _COMP_VAR.get(c['label'], 'var(--wf-cr)')
-            stops.append(f'{var} {cum:.2f}%')
+            stops.append(f'{_COMP_GRAD.get(c["label"], "#5b9dff")} {cum:.1f}% {cum + w:.1f}%')
             cum += w
-            stops.append(f'{var} {cum:.2f}%')
-        grad = f'linear-gradient(90deg, {", ".join(stops)})'
+        grad = f'linear-gradient(90deg,{",".join(stops)})'
         rows.append(f"""
-        <div class="wf-row level-0">
-          <div class="wf-lbl root"><span class="wf-tree-icon">●</span>eff input</div>
-          <div class="wf-track"><div class="wf-fill" style="width:100%; background:{grad};"></div></div>
-          <div class="wf-tok">{total:,.0f}</div>
-          <div class="wf-pct">100%</div>
-          <div class="wf-cost">~${total * base_price / pool:.3f}/s</div>
-        </div>
-        <div class="wf-sep"></div>""")
-
+      <div class="wf-row root"><span class="wf-l root"><span class="tick">● </span>eff input</span>
+        <div class="wf-bar"><div class="wf-f" style="width:100%;background:{grad}"></div></div>
+        <span class="wf-t">{total:,.0f}</span><span class="wf-p">100%</span><span class="wf-c">~${total * base / pool:.3f}/s</span></div>""")
         for i, c in enumerate(comps):
-            last_comp = i == len(comps) - 1
-            cls = _COMP_CLASS.get(c['label'], ('wf-cr', 'wf-cr-pre', 'wf-cr-po'))
+            last = i == len(comps) - 1
+            cls = _COMP_CLS.get(c['label'], ('cr', 'crp', 'crq'))
             pct = (c['eff'] / total) if total else 0
-            glyph = '└─' if last_comp else '├─'
-            rows.append(_wf_row(1, glyph, c['label'], pct, c['eff'],
-                                f'var(--{cls[0]})', f'{pct * 100:.0f}%',
-                                cost=f'~${c["eff"] * base_price / pool:.3f}/s'))
-            # pre/post-edit split — only when the component carries it (cache
-            # write has no pre/post in the model, so skip the sub-rows there).
+            rows.append(_wf_row('s1', '└─ ' if last else '├─ ', c['label'], pct * 100,
+                                cls[0], f'{pct * 100:.0f}%', c['eff'], f'{pct * 100:.0f}%',
+                                f'~${c["eff"] * base / pool:.3f}/s'))
             if c['label'] != 'cache write' and c['eff'] > 0:
                 pre, post = c['pre'], c['eff'] - c['pre']
-                stem = '  ' if last_comp else '│ '
-                rows.append(_wf_row(2, stem + '├─', 'pre-edit', pre / total, pre,
-                                    f'var(--{cls[1]})', f'{pre / total * 100:.0f}%'))
-                rows.append(_wf_row(2, stem + '└─', 'post-edit', post / total, post,
-                                    f'var(--{cls[2]})', f'{post / total * 100:.0f}%'))
-            if not last_comp:
-                rows.append('<div class="wf-sep"></div>')
-        note = (f'over {tree["pool_sessions"]} measured edit '
-                f'session{"s" if tree["pool_sessions"] != 1 else ""} · children sum to their parent')
+                stem = '   ' if last else '│  '
+                rows.append(_wf_row('s2', stem + '├─ ', 'pre-edit', pre / c['eff'] * 100,
+                                    cls[1], f'{pre / c["eff"] * 100:.0f}%', pre,
+                                    f'{pre / total * 100:.0f}%', ''))
+                rows.append(_wf_row('s2', stem + '└─ ', 'post-edit', post / c['eff'] * 100,
+                                    cls[2], f'{post / c["eff"] * 100:.0f}%', post,
+                                    f'{post / total * 100:.0f}%', ''))
+        sub = (f'measured spine · {pool} edit session{"s" if pool != 1 else ""} · '
+               f'children sum to parent · $/s at {data["provider"]} pricing')
     else:
         total = spine_total
-        comps = sorted(
-            [('cache read', spine.get('cache_read', 0)),
-             ('fresh input', spine.get('fresh_input', 0)),
-             ('cache write', spine.get('cache_write', 0))],
-            key=lambda kv: kv[1], reverse=True)
+        n_all = max(1, data['sessions'])
+        comps = sorted([('cache read', spine.get('cache_read', 0)),
+                        ('fresh input', spine.get('fresh_input', 0)),
+                        ('cache write', spine.get('cache_write', 0))],
+                       key=lambda kv: kv[1], reverse=True)
         stops, cum = [], 0.0
         for label, val in comps:
             w = (val / total * 100) if total else 0
-            var = _COMP_VAR.get(label, 'var(--wf-cr)')
-            stops.append(f'{var} {cum:.2f}%'); cum += w; stops.append(f'{var} {cum:.2f}%')
-        grad = f'linear-gradient(90deg, {", ".join(stops)})'
-        n_all = max(1, data['sessions'])
+            stops.append(f'{_COMP_GRAD.get(label, "#5b9dff")} {cum:.1f}% {cum + w:.1f}%')
+            cum += w
+        grad = f'linear-gradient(90deg,{",".join(stops)})'
         rows.append(f"""
-        <div class="wf-row level-0">
-          <div class="wf-lbl root"><span class="wf-tree-icon">●</span>eff input</div>
-          <div class="wf-track"><div class="wf-fill" style="width:100%; background:{grad};"></div></div>
-          <div class="wf-tok">{total:,.0f}</div>
-          <div class="wf-pct">100%</div>
-          <div class="wf-cost">~${total * base_price / n_all:.3f}/s</div>
-        </div>
-        <div class="wf-sep"></div>""")
+      <div class="wf-row root"><span class="wf-l root"><span class="tick">● </span>eff input</span>
+        <div class="wf-bar"><div class="wf-f" style="width:100%;background:{grad}"></div></div>
+        <span class="wf-t">{total:,.0f}</span><span class="wf-p">100%</span><span class="wf-c">~${total * base / n_all:.3f}/s</span></div>""")
         for i, (label, val) in enumerate(comps):
-            cls = _COMP_CLASS.get(label, ('wf-cr', '', ''))
+            cls = _COMP_CLS.get(label, ('cr', '', ''))
             pct = (val / total) if total else 0
-            glyph = '└─' if i == len(comps) - 1 else '├─'
-            rows.append(_wf_row(1, glyph, label, pct, val,
-                                f'var(--{cls[0]})', f'{pct * 100:.0f}%',
-                                cost=f'~${val * base_price / n_all:.3f}/s'))
-        note = 'all sessions · composition only (no measured edit pool for pre/post)'
-
+            rows.append(_wf_row('s1', '└─ ' if i == len(comps) - 1 else '├─ ', label, pct * 100,
+                                cls[0], f'{pct * 100:.0f}%', val, f'{pct * 100:.0f}%',
+                                f'~${val * base / n_all:.3f}/s'))
+        sub = 'all sessions · composition only (no measured edit pool for pre/post)'
     return f"""
-    <section class="section" id="waterfall">
-      <div class="section-label">Token waterfall — measured spine</div>
-      <div class="wf-note">{_esc(note)} · $/session at {_esc(data['provider'])} input pricing</div>
-      <div class="wf-tree">{''.join(rows)}</div>
-    </section>"""
+    <div class="panel" id="wf"><div class="ph">Token waterfall <span class="sub">{_esc(sub)}</span></div>
+      <div class="pb wf">{''.join(rows)}</div></div>"""
 
+
+# ── retry loops ──────────────────────────────────────────────────────────────
+
+def _retry_loops(data: dict) -> str:
+    fc = [c for c in (data.get('top_failed_commands') or []) if c['failures'] > 1]
+    if not fc:
+        return ''
+    rows = ''.join(
+        f'<tr><td class="num {_sev(c["failures"], 2, 4)}">{c["failures"]}</td>'
+        f'<td class="num">{c["sessions"]}</td><td class="mono">{_esc(c["cmd"])}</td></tr>'
+        for c in fc[:10])
+    return f"""
+    <div class="panel" id="retry"><div class="ph">Retry loops <span class="sub">same command failing repeatedly</span></div>
+      <table><thead><tr><th class="r">Fails</th><th class="r">Sessions</th><th>Command</th></tr></thead>
+      <tbody>{rows}</tbody></table>
+      <div class="note">Drill in → <code>cram audit --layer retries</code></div></div>"""
+
+
+# ── cost by layer ────────────────────────────────────────────────────────────
+
+def _cost_by_layer(data: dict) -> str:
+    costs = data.get('layer_costs') or []
+    if not costs:
+        return ''
+    rows = []
+    for r in costs:
+        basis = r['basis']
+        if basis == 'count':
+            tok, cost = '<span class="dim">—</span>', f'{r.get("count_per_session", 0):.1f}/sess'
+        else:
+            eff, c = r.get('eff_tokens_per_session'), r.get('cost_per_session')
+            tok = f'{eff:,.0f}' if eff else '<span class="dim">—</span>'
+            cost = f'~${c:.4f}' if c is not None else '<span class="dim">—</span>'
+        rows.append(f'<tr><td class="mono">{_esc(r["layer"])}</td><td class="num">{tok}</td>'
+                    f'<td class="num">{cost}</td><td><span class="b {basis}">{_esc(basis)}</span></td>'
+                    f'<td class="dim">{_esc(r.get("note", ""))}</td></tr>')
+    return f"""
+    <div class="panel" id="cost"><div class="ph">Cost by waste layer <span class="sub">overlapping diagnostics — do not sum to the spine</span></div>
+      <table><thead><tr><th>Layer</th><th class="r">Eff tok/sess</th><th class="r">$/sess</th><th>Basis</th><th>Notes</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody></table></div>"""
+
+
+# ── leaderboard + embedded drilldown ─────────────────────────────────────────
+
+def _drilldown(tl: dict, repo_root: str) -> str:
+    """Embedded per-session detail: notable turns, carried, redundant, failed cmds."""
+    # show turns that carry a note or a big context jump, capped
+    notable = [r for r in tl['rows'] if r['notes'] or abs(r['delta']) > 8000][:8]
+    if not notable:
+        notable = tl['rows'][:5]
+    trows = ''
+    for r in notable:
+        d = r['delta']
+        dcls = 'sev-hi' if d > 8000 else ('sev-md' if d > 0 else 'dim')
+        dstr = f'+{d:,}' if d > 0 else (f'{d:,}' if d < 0 else '—')
+        note = '; '.join(r['notes'][:2]) if r['notes'] else ''
+        ncls = ' style="color:var(--red)"' if note.startswith('✗') else ''
+        trows += (f'<tr><td>{r["turn"]}</td><td class="num">{r["input"]:,}</td>'
+                  f'<td class="num">{r["cache_read"]:,}</td><td class="num">{r["context"]:,}</td>'
+                  f'<td class="num {dcls}">{dstr}</td><td{ncls}>{_esc(note)}</td></tr>')
+    chips = [f'peak ctx <b>{tl["peak_context"]:,}</b>']
+    if tl.get('carried_read_tokens'):
+        chips.append(f'carried <b>{tl["carried_read_tokens"]:,} tok</b>')
+    if tl.get('redundant'):
+        fp, n = tl['redundant'][0]
+        chips.append(f'redundant <b>{_esc(repo_rel(fp, repo_root))} ×{n}</b>')
+    for fcmd in (tl.get('failed_commands') or [])[:2]:
+        chips.append(f'<span style="color:var(--red)">✗ {_esc(fcmd["cmd"][:50])} ×{fcmd["failures"]}</span>')
+    chip_html = ' &nbsp; '.join(f'<span class="dim">{c}</span>' for c in chips)
+    return f"""<div class="drill">
+        <table class="mini"><thead><tr><th>Turn</th><th class="r">Input</th><th class="r">CacheR</th><th class="r">Context</th><th class="r">Δ</th><th>Note</th></tr></thead>
+        <tbody>{trows}</tbody></table>
+        <div class="chips">{chip_html}</div></div>"""
+
+
+def _leaderboard(data: dict, drilldowns: dict, repo_root: str) -> str:
+    board = data.get('leaderboard') or []
+    if not board:
+        return ''
+    rows = []
+    for s in board:
+        sid = str(s.get('session_id', ''))
+        sid8 = _esc(sid[:8] or '—')
+        src = s.get('source', 'claude')
+        badge = 'codex' if src == 'codex' else ('cursor' if src == 'cursor' else 'claude')
+        inp, rbe = s.get('input_tokens', 0), s.get('reads_before_edit', 0)
+        g = s.get('context_growth_factor')
+        cr, cw = s.get('cache_reads', 0), s.get('cache_writes', 0)
+        denom = inp + cr + cw
+        hit = f'{cr / denom * 100:.0f}%' if denom else '—'
+        rows.append(f'<tr><td class="mono">{sid8}</td><td><span class="badge {badge}">{_esc(src)}</span></td>'
+                    f'<td class="num">{inp:,}</td><td class="num {_sev(rbe, 8, 15)}">{rbe}</td>'
+                    f'<td class="num">{hit}</td><td class="num {_sev(g or 0, 2, 4)}">{f"{g:.1f}×" if g else "—"}</td>'
+                    f'<td class="num {_sev(s.get("error_results", 0), 1, 3)}">{s.get("error_results", 0)}</td></tr>')
+        tl = drilldowns.get(sid) or drilldowns.get(sid8)
+        if tl:
+            rows.append(f'<tr class="drill-row"><td colspan="7"><details><summary>{sid8} — '
+                        f'per-turn timeline · carried · failed commands</summary>'
+                        f'{_drilldown(tl, repo_root)}</details></td></tr>')
+    hint = ('expand a row to drill in' if drilldowns
+            else 'drill in → cram audit --session &lt;id&gt;')
+    return f"""
+    <div class="panel" id="board"><div class="ph">Session leaderboard <span class="sub">{hint}</span></div>
+      <table><thead><tr><th>Session</th><th>Src</th><th class="r">Input</th><th class="r">Reads→edit</th>
+        <th class="r">Cache</th><th class="r">Growth</th><th class="r">Retries</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody></table></div>"""
+
+
+# ── waste layers ─────────────────────────────────────────────────────────────
+
+def _layer_fill_value(layer: str, data: dict, rows: list) -> tuple[float, str]:
+    if layer == 'orientation':
+        v = data.get('avg_reads_before_edit', 0); return min(1, v / 10), f'{v:.1f} reads/sess'
+    if layer == 'repeated':
+        n = len(rows); return min(1, n / 10), f'{n} file{"s" if n != 1 else ""}'
+    if layer == 'redundant':
+        v = data.get('avg_redundant_reads', 0); return min(1, v / 5), f'{v:.1f}/sess'
+    if layer == 'churn':
+        v = data.get('avg_edit_churn', 0); return min(1, v / 5), f'{v:.1f}/sess'
+    if layer == 'carried':
+        n = data.get('sessions_with_big_results', 0)
+        return min(1, n / max(1, data['sessions'])), f'{n} session{"s" if n != 1 else ""}'
+    if layer == 'retries':
+        v = data.get('avg_error_results', 0); return min(1, v / 5), f'{v:.1f}/sess'
+    return 0, ''
+
+
+def _layers(data: dict, layers: dict, repo_root: str) -> str:
+    from cram.audit import format_layer_row
+    blocks = []
+    for name in _LAYER_ORDER:
+        contrib = layers.get(name) or []
+        fill, val = _layer_fill_value(name, data, contrib)
+        blocks.append(f'<div class="lay"><span class="lay-n">{_esc(name)}</span>'
+                      f'<span class="lay-d">{_esc(_LAYER_DESC[name])}</span>'
+                      f'<div class="lay-tr"><div class="lay-fl" style="width:{fill * 100:.0f}%"></div></div>'
+                      f'<span class="lay-v">{_esc(val)}</span></div>')
+        if contrib:
+            items = ''.join(f'<tr><td>{_esc(format_layer_row(name, r, repo_root))}</td></tr>'
+                            for r in contrib[:5])
+            blocks.append(f'<details><summary>{_esc(name)} · top contributors '
+                          f'({min(len(contrib), 5)} of {len(contrib)})</summary>'
+                          f'<div class="drill"><table class="mini"><tbody>{items}</tbody></table></div></details>')
+    return f"""
+    <div class="panel" id="layers"><div class="ph">Waste layers <span class="sub">diagnostics &amp; top contributors</span></div>
+      {''.join(blocks)}</div>"""
+
+
+# ── findings ─────────────────────────────────────────────────────────────────
 
 def _findings(data: dict) -> str:
     findings = data.get('findings') or []
@@ -285,392 +391,231 @@ def _findings(data: dict) -> str:
     cards = []
     for fd in findings:
         verify = _VERIFY.get(fd['id'])
-        verify_html = (f"""
-          <div class="finding-action"><span class="al verify">verify</span><span>{_code(verify)}</span></div>"""
-                       if verify else '')
+        ver = (f'<div class="fa"><span class="tag ver">VERIFY</span><span>{_code(verify)}</span></div>'
+               if verify else '')
         cards.append(f"""
-      <div class="finding">
-        <div class="finding-head">
-          <span class="finding-id">{_esc(fd['id'])}</span>
-          <span class="finding-evidence">{_code(fd['evidence'])}</span>
-        </div>
-        <div class="finding-actions">
-          <div class="finding-action"><span class="al fix">fix</span><span>{_code(fd['fix'])}</span></div>{verify_html}
-        </div>
-      </div>""")
+        <div class="find"><div class="find-t"><span class="fid">{_esc(fd['id'])}</span>
+          <span>{_code(fd['evidence'])}</span></div>
+          <div class="find-a"><div class="fa"><span class="tag fix">FIX</span><span>{_code(fd['fix'])}</span></div>{ver}</div></div>""")
     return f"""
-    <section class="section" id="findings">
-      <div class="section-label">Findings ({len(findings)})</div>
-      <div class="findings">{''.join(cards)}</div>
-    </section>"""
+    <div class="panel" id="find"><div class="ph">Findings <span class="sub">{len(findings)}</span></div>
+      <div class="pb">{''.join(cards)}</div></div>"""
 
 
-def _leaderboard(data: dict) -> str:
-    board = data.get('leaderboard') or []
-    if not board:
+# ── context on/off (referee A/B) ─────────────────────────────────────────────
+
+def _context_ab(data: dict) -> str:
+    seg = data.get('context_mode_segment')
+    if not seg:
         return ''
-    rows = []
-    for s in board:
-        sid = _esc(str(s.get('session_id', ''))[:8] or '—')
-        src = s.get('source', 'claude')
-        badge = 'codex' if src == 'codex' else ('cursor' if src == 'cursor' else 'claude')
-        inp = s.get('input_tokens', 0)
-        rbe = s.get('reads_before_edit', 0)
-        growth = s.get('context_growth_factor')
-        growth_s = f'{growth:.1f}×' if growth else '—'
-        retries = s.get('error_results', 0)
-        cr, cw = s.get('cache_reads', 0), s.get('cache_writes', 0)
-        denom = inp + cr + cw
-        hit = f'{cr / denom * 100:.0f}%' if denom else '—'
-        rows.append(f"""
-          <tr>
-            <td class="mono">{sid}</td>
-            <td><span class="badge {badge}">{_esc(src)}</span></td>
-            <td class="num">{inp:,}</td>
-            <td class="num {_heat(rbe, 8, 15)}">{rbe}</td>
-            <td class="num">{hit}</td>
-            <td class="num {_heat(growth or 0, 2, 4)}">{growth_s}</td>
-            <td class="num {_heat(retries, 1, 3)}">{retries}</td>
-          </tr>""")
-    return f"""
-    <section class="section" id="leaderboard">
-      <div class="section-label">Session leaderboard</div>
-      <table>
-        <thead><tr>
-          <th>Session</th><th>Source</th><th class="r">Input tok</th>
-          <th class="r">Reads&rarr;edit</th><th class="r">Cache hit</th>
-          <th class="r">Ctx growth</th><th class="r">Retries</th>
-        </tr></thead>
-        <tbody>{''.join(rows)}</tbody>
-      </table>
-      <div class="drill-hint">drill in &rarr; <code>cram audit --session &lt;id&gt;</code></div>
-    </section>"""
+    on, off = seg['on'], seg['off']
 
+    def delta(a, b):
+        # lower is better for these waste metrics → negative Δ is good
+        if not b:
+            return '—', ''
+        pct = (a - b) / b * 100
+        cls = 'delta-good' if pct < 0 else ('delta-bad' if pct > 0 else '')
+        return f'{pct:+.0f}%', cls
 
-def _layer_fill_and_value(layer: str, data: dict, rows: list) -> tuple[float, str]:
-    """Bar fill fraction (0..1, bounded) and the human value label per layer."""
-    if layer == 'orientation':
-        v = data.get('avg_reads_before_edit', 0)
-        return min(1.0, v / 10), f'{v:.1f} reads/session'
-    if layer == 'repeated':
-        n = len(rows)
-        return min(1.0, n / 10), f'{n} file{"s" if n != 1 else ""} re-read'
-    if layer == 'redundant':
-        v = data.get('avg_redundant_reads', 0)
-        return min(1.0, v / 5), f'{v:.1f} extra reads/session'
-    if layer == 'churn':
-        v = data.get('avg_edit_churn', 0)
-        return min(1.0, v / 5), f'{v:.1f} re-edits/session'
-    if layer == 'carried':
-        n = data.get('sessions_with_big_results', 0)
-        total = max(1, data.get('sessions', 1))
-        return min(1.0, n / total), f'{n} session{"s" if n != 1 else ""} affected'
-    if layer == 'retries':
-        v = data.get('avg_error_results', 0)
-        return min(1.0, v / 5), f'{v:.1f} failures/session'
-    return 0.0, ''
-
-
-def _layers(data: dict, layers: dict, repo_root: str) -> str:
-    from cram.audit import format_layer_row  # local import avoids cycle at import time
-    rows_html = []
-    for name in _LAYER_ORDER:
-        contributors = layers.get(name) or []
-        fill, value = _layer_fill_and_value(name, data, contributors)
-        drill = ''
-        if contributors:
-            items = ''.join(
-                f'<div class="drill-row">{_esc(format_layer_row(name, r, repo_root))}</div>'
-                for r in contributors[:5])
-            drill = f"""
-        <details class="layer-details">
-          <summary>top contributors ({min(len(contributors), 5)} of {len(contributors)})</summary>
-          <div class="drill-list">{items}</div>
-        </details>"""
-        rows_html.append(f"""
-      <div class="layer-block">
-        <div class="layer-row">
-          <div class="l-name">{_esc(name)}</div>
-          <div class="l-desc">{_esc(_LAYER_DESC[name])}</div>
-          <div class="l-track"><div class="l-fill" style="width:{fill * 100:.0f}%"></div></div>
-          <div class="l-val">{_esc(value)}</div>
-        </div>{drill}
-      </div>""")
-    return f"""
-    <section class="section" id="layers">
-      <div class="section-label">Waste layers</div>
-      {_cost_by_layer(data)}
-      <div class="layers-sub">Diagnostics &amp; top contributors</div>
-      <div class="layers">{''.join(rows_html)}</div>
-    </section>"""
-
-
-def _cost_by_layer(data: dict) -> str:
-    """Dollar/token-ranked waste layers. These OVERLAP and do NOT sum to the
-    spine — orientation pre-edit cache reads are already inside 'cache read', etc."""
-    costs = data.get('layer_costs') or []
-    if not costs:
+    def row(label, key, fmt, money=False):
+        a, b = on.get(key), off.get(key)
+        if a is None or b is None:
+            return ''
+        d, cls = delta(a, b)
+        fa = (f'${a:{fmt}}' if money else f'{a:{fmt}}')
+        fb = (f'${b:{fmt}}' if money else f'{b:{fmt}}')
+        return (f'<tr><td>{_esc(label)}</td><td class="num">{fa}</td>'
+                f'<td class="num">{fb}</td><td class="num {cls}">{d}</td></tr>')
+    rows = ''.join([
+        row('Reads before first edit', 'avg_reads_before_edit', '.1f'),
+        row('Carried result cost/session', 'carried_cost_per_session', '.4f', money=True),
+        row('Sessions w/ oversized result', 'sessions_with_big_results', 'd'),
+        row('Avg peak context (tokens)', 'avg_peak_context', ',.0f'),
+    ])
+    if not rows:
         return ''
-    rows = []
-    for r in costs:
-        basis = r['basis']
-        dot = {'measured': 'measured', 'estimated': 'estimated', 'count': 'count'}[basis]
-        if basis == 'count':
-            cps = r.get('count_per_session') or 0
-            tok_cell = '<span class="dim">—</span>'
-            cost_cell = f'{cps:.1f}/session <span class="dim">(count)</span>'
-        else:
-            eff = r.get('eff_tokens_per_session')
-            cost = r.get('cost_per_session')
-            tok_cell = f'{eff:,.0f}' if eff else '<span class="dim">—</span>'
-            cost_cell = f'~${cost:.4f}' if cost is not None else '<span class="dim">—</span>'
-        rows.append(f"""
-          <tr>
-            <td class="mono">{_esc(r['layer'])}</td>
-            <td class="num">{tok_cell}</td>
-            <td class="num">{cost_cell}</td>
-            <td><span class="basis-badge {basis}"><span class="dot {dot}"></span>{_esc(basis)}</span></td>
-            <td class="dim">{_esc(r.get('note', ''))}</td>
-          </tr>""")
     return f"""
-      <table class="cost-table">
-        <thead><tr>
-          <th>Layer</th><th class="r">Eff tok/session</th><th class="r">$/session</th>
-          <th>Basis</th><th>Notes</th>
-        </tr></thead>
-        <tbody>{''.join(rows)}</tbody>
-      </table>
-      <div class="cov-note">These layers <b>overlap</b> and do not sum to effective
-        input — they're a diagnostic lens, not a partition. The spine waterfall
-        above is the exhaustive partition.</div>"""
+    <div class="panel" id="ab"><div class="ph">Context layer: on vs off <span class="sub">observational split — not a controlled trial</span></div>
+      <table class="ab"><thead><tr><th>Metric</th><th class="r">ctx on ({on.get('sessions', 0)})</th>
+        <th class="r">ctx off ({off.get('sessions', 0)})</th><th class="r">Δ</th></tr></thead>
+      <tbody>{rows}</tbody></table>
+      <div class="warnbox">⚠ Observational, not causal — sessions self-selected into ctx-on.
+        Confirm with <code>cram rig --providers baseline,cram</code> before treating as causal.</div></div>"""
 
 
-def _metric(val: str, label: str, basis: str, cls: str = '') -> str:
-    return f"""
-        <div class="metric">
-          <div class="m-val {cls}">{_esc(val)}</div>
-          <div class="m-label">{_esc(label)}</div>
-          <div class="m-basis">{_esc(basis)}</div>
-        </div>"""
+# ── key metrics ──────────────────────────────────────────────────────────────
+
+def _metric(val, label, basis, cls=''):
+    return (f'<div class="m"><div class="m-v {cls}">{_esc(val)}</div>'
+            f'<div class="m-l">{_esc(label)}</div><div class="m-b">{_esc(basis)}</div></div>')
 
 
 def _metrics(data: dict) -> str:
-    spine = data.get('token_spine') or {}
-    spine_total = spine.get('total', 0) or 0
-    total_spend = spine_total * _BASE_PRICE
-    n = max(1, data['sessions'])
-    per_session = total_spend / n
-    # cache hit rate from raw tokens recovered out of the effective spine
-    raw_cr = (spine.get('cache_read', 0) or 0) / _CR_MULT if _CR_MULT else 0
-    raw_cw = (spine.get('cache_write', 0) or 0) / _CW_MULT if _CW_MULT else 0
-    raw_in = spine.get('fresh_input', 0) or 0
-    raw_denom = raw_cr + raw_cw + raw_in
-    cache_hit = (raw_cr / raw_denom * 100) if raw_denom else 0
-
+    total_spend, per_session, cache_hit = _spend(data)
     cards = [
-        _metric(f'${total_spend:,.2f}', f'Est. input-side spend, last {data["days"]}d',
-                'measured tokens × price'),
-        _metric(f'${per_session:.4f}', 'Avg cost per session', f'{data["sessions"]} sessions'),
-        _metric(f'{cache_hit:.0f}%', 'Cache hit rate', 'cache read / total input', 'green'),
+        _metric(f'${total_spend:,.2f}', f'Est input-side spend, {data["days"]}d', 'measured × price'),
+        _metric(f'${per_session:.4f}', 'Avg cost / session', f'{data["sessions"]} sessions'),
+        _metric(f'{cache_hit:.0f}%', 'Cache hit rate', 'cache read / total', 'g'),
         _metric(f'{data["avg_reads_before_edit"]:.1f}', 'Reads before first edit', 'measured avg'),
         _metric(f'{data["avg_ratio"]:.1f}×', 'Read-to-edit ratio', f'measured · {data["ratio_band"]}'),
     ]
     if data.get('avg_context_growth') is not None:
         g = data['avg_context_growth']
-        cards.append(_metric(f'{g:.1f}×', 'Context growth, peak/start', 'measured avg',
-                             'red' if g > 3 else ''))
+        cards.append(_metric(f'{g:.1f}×', 'Context growth, peak/start', 'measured', 'r' if g > 3 else ''))
     if data.get('peak_context'):
         pk = data['peak_context']
-        cards.append(_metric(f'{pk / 1000:.1f}k', 'Peak context (tokens)',
-                             f'{pk / 200_000 * 100:.0f}% of 200k window'))
+        cards.append(_metric(f'{pk / 200_000 * 100:.0f}%', 'Ctx window used', f'{pk:,} / 200k'))
     if data.get('avg_requests'):
-        cards.append(_metric(f'{data["avg_requests"]:.0f}', 'Requests per session', 'measured'))
-
+        cards.append(_metric(f'{data["avg_requests"]:.0f}', 'Requests / session', 'measured'))
     return f"""
-    <section class="section" id="metrics">
-      <div class="section-label">Key metrics</div>
-      <div class="metrics">{''.join(cards)}</div>
-    </section>"""
+    <div class="panel" id="metrics"><div class="ph">Key metrics</div>
+      <div class="pb" style="padding:0"><div class="mgrid">{''.join(cards)}</div></div></div>"""
 
 
-def render_report_html(data: dict, layers: dict, repo_root: str) -> str:
+# ── assembly ─────────────────────────────────────────────────────────────────
+
+def render_report_html(data: dict, layers: dict, repo_root: str,
+                       drilldowns: dict | None = None) -> str:
     """Return a standalone HTML report for a collect_audit() result.
 
-    layers maps each waste-layer name to its ranked contributor rows
-    (as produced by collect_layer / _layer_rows). Pass {} to omit drilldowns.
+    layers   maps each waste-layer name to its ranked contributor rows.
+    drilldowns maps a session_id (or its 8-char prefix) to a
+    derive_session_timeline() dict, embedded under the matching leaderboard row.
     """
     name = os.path.basename(repo_root.rstrip(os.sep)) or repo_root
     today = datetime.date.today().isoformat()
-    total = data['sessions']
+    drilldowns = drilldowns or {}
+
+    # sidebar links — only for sections that render
+    nav = [('sum', 'Summary'), ('cov', 'Coverage'), ('wf', 'Token waterfall')]
+    if _retry_loops(data):
+        nav.append(('retry', 'Retry loops'))
+    nav.append(('cost', 'Cost by layer'))
+    nav += [('board', 'Leaderboard'), ('layers', 'Waste layers'), ('find', 'Findings')]
+    if _context_ab(data):
+        nav.append(('ab', 'Context on/off'))
+    nav.append(('metrics', 'Key metrics'))
+    side = ''.join(f'<a href="#{i}" class="{"on" if k == 0 else ""}">{_esc(t)}</a>'
+                   for k, (i, t) in enumerate(nav))
 
     body = ''.join([
-        _headline(data),
-        _coverage(data),
-        _waterfall(data),
-        _findings(data),
-        _leaderboard(data),
-        _layers(data, layers, repo_root),
-        _metrics(data),
+        f'<section id="sum">{_strip(data)}{_headline(data)}</section>',
+        _coverage(data), _waterfall(data), _retry_loops(data), _cost_by_layer(data),
+        _leaderboard(data, drilldowns, repo_root), _layers(data, layers, repo_root),
+        _findings(data), _context_ab(data), _metrics(data),
     ])
 
     return _SHELL.format(
-        css=_CSS, js=_JS,
-        repo=_esc(name), days=data['days'], sessions=total, today=_esc(today),
-        provider=_esc(data['provider']), body=body,
-    )
+        css=_CSS, js=_JS, repo=_esc(name), days=data['days'],
+        sessions=data['sessions'], today=_esc(today), provider=_esc(data['provider']),
+        side=side, body=body)
 
 
 # ── static assets ────────────────────────────────────────────────────────────
 
-_CSS = """
-[data-theme="dark"]{--bg:#09090b;--surface:#111113;--surface2:#18181b;--border:#27272a;--muted:#52525b;--text:#a1a1aa;--heading:#fafafa;--accent:#818cf8;--accent-lo:rgba(129,140,248,.1);--accent-bd:rgba(129,140,248,.25);--green:#34d399;--green-lo:rgba(52,211,153,.08);--yellow:#fbbf24;--red:#f87171;--shadow:0 1px 3px rgba(0,0,0,.4);--wf-cr:#3730a3;--wf-cr-pre:#4c1d95;--wf-cr-po:#2e1065;--wf-fr:#065f46;--wf-fr-pre:#064e3b;--wf-fr-po:#022c22;--wf-cw:#7c2d12}
-[data-theme="light"]{--bg:#f8f8fa;--surface:#fff;--surface2:#f1f1f5;--border:#e4e4e7;--muted:#a1a1aa;--text:#52525b;--heading:#09090b;--accent:#4f46e5;--accent-lo:rgba(79,70,229,.07);--accent-bd:rgba(79,70,229,.2);--green:#059669;--green-lo:rgba(5,150,105,.07);--yellow:#d97706;--red:#dc2626;--shadow:0 1px 3px rgba(0,0,0,.08);--wf-cr:#818cf8;--wf-cr-pre:#6366f1;--wf-cr-po:#a5b4fc;--wf-fr:#34d399;--wf-fr-pre:#059669;--wf-fr-po:#6ee7b7;--wf-cw:#f97316}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+_CSS = r"""
+:root{--bg:#0a0c10;--panel:#11141a;--panel2:#171b22;--panel3:#1c212a;--border:#222831;--border2:#2c333d;--muted:#646e7e;--text:#bcc3cd;--heading:#f0f3f6;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--cyan:#56b6c2;--mono:'JetBrains Mono','SF Mono',ui-monospace,monospace;--sans:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif;--radius:6px}
+[data-theme="light"]{--bg:#f6f7f9;--panel:#fff;--panel2:#f1f3f5;--panel3:#e9ecef;--border:#e1e4e8;--border2:#d0d7de;--muted:#8b949e;--text:#3a414a;--heading:#0a0c10;--accent:#3b6db8;--green:#2c7d38;--amber:#9a6700;--red:#cf222e;--cyan:#357b85}
+*{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif;font-size:13.5px;line-height:1.6;transition:background .2s,color .2s}
-:root{--mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;--sidebar-w:200px;--radius:6px}
-.shell{display:grid;grid-template-columns:var(--sidebar-w) 1fr;grid-template-rows:auto 1fr;min-height:100vh}
-.header{grid-column:1/-1;padding:14px 28px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--surface);position:sticky;top:0;z-index:100}
-.logo{font-family:var(--mono);font-size:12px;color:var(--accent);background:var(--accent-lo);border:1px solid var(--accent-bd);padding:3px 9px;border-radius:4px;letter-spacing:.04em;flex-shrink:0}
-.header-repo{font-size:14px;font-weight:600;color:var(--heading)}
-.header-sep{color:var(--border)}.header-sub{font-size:13px;color:var(--muted)}
-.header-right{margin-left:auto;display:flex;align-items:center;gap:16px}
-.header-meta{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;gap:14px}
-.toggle{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;transition:border-color .15s,color .15s;flex-shrink:0}
-.toggle:hover{border-color:var(--accent);color:var(--accent)}
-.sidebar{grid-column:1;grid-row:2;border-right:1px solid var(--border);padding:24px 0;position:sticky;top:49px;height:calc(100vh - 49px);overflow-y:auto;background:var(--surface)}
-.sidebar-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:0 20px 8px}
-.sidebar-link{display:block;padding:6px 20px;font-size:12.5px;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:color .12s,border-color .12s,background .12s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sidebar-link:hover{color:var(--heading);background:var(--surface2)}
-.sidebar-link.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-lo)}
-.main{grid-column:2;grid-row:2;padding:40px 48px 80px;min-width:0}
-.section{padding-top:52px}.section:first-child{padding-top:0}
-.section-label{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:10px}
-.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
-.headline-grid{display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:start}
-.hl-stat{font-family:var(--mono);font-size:56px;font-weight:700;color:var(--heading);letter-spacing:-.03em;line-height:1}
-.hl-stat em{color:var(--accent);font-style:normal}
-.hl-unit{font-size:13px;color:var(--muted);margin-top:6px}
-.hl-desc{font-size:13px;color:var(--text);padding-top:4px}.hl-desc strong{color:var(--heading)}
-.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
-.tag{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);color:var(--muted);background:var(--surface2)}
-.tag.hi{border-color:var(--accent-bd);color:var(--accent);background:var(--accent-lo)}
-.wf-note{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px}
-.wf-tree{display:flex;flex-direction:column;gap:5px;font-family:var(--mono)}
-.wf-row{display:grid;grid-template-columns:130px 1fr 90px 44px 84px;align-items:center;gap:12px;font-size:12px}
-.wf-row.level-1{padding-left:16px}.wf-row.level-2{padding-left:32px}
-.wf-cost{color:var(--muted);text-align:right;font-size:11px}
-.wf-row.level-0 .wf-cost{color:var(--heading)}
-.wf-lbl{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
-.wf-lbl.root{color:var(--heading);font-weight:600}
-.wf-tree-icon{color:var(--border);flex-shrink:0;white-space:pre}
-.wf-track{height:20px;background:var(--surface2);border-radius:3px;overflow:hidden;border:1px solid var(--border)}
-.wf-row.level-0 .wf-track{height:26px;border-radius:4px}.wf-row.level-2 .wf-track{height:15px}
-.wf-fill{height:100%;border-radius:2px;display:flex;align-items:center;padding:0 7px;font-size:10px;font-weight:700;color:rgba(255,255,255,.6);white-space:nowrap;overflow:hidden;min-width:0}
-[data-theme="light"] .wf-fill{color:rgba(0,0,0,.45)}
-.wf-tok{color:var(--text);text-align:right}.wf-pct{color:var(--muted);text-align:right}
-.wf-row.level-0 .wf-tok{color:var(--heading);font-weight:600}
-.wf-sep{height:8px}
-.cov-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
-.cov-cell{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
-.cov-cell.warn{border-color:var(--yellow)}
-.cov-val{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--heading)}
-.cov-label{font-size:10.5px;color:var(--muted);margin-top:3px}
-.cov-legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;font-size:11.5px;color:var(--muted)}
-.cov-legend b{color:var(--text);font-weight:600}
-.cov-note{margin-top:12px;font-size:11.5px;color:var(--muted);line-height:1.5}
-.cov-note b{color:var(--text)}
-.warn-text{color:var(--yellow)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin-right:2px}
-.dot.measured{background:var(--green)}.dot.estimated{background:var(--yellow)}.dot.count{background:var(--muted)}
-.cost-table{margin-bottom:14px}
-.cost-table td{padding:8px 10px}
-.basis-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--muted)}
-.basis-badge.measured{border-color:rgba(52,211,153,.25)}
-.basis-badge.estimated{border-color:rgba(251,191,36,.3)}
-.layers-sub{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 10px}
-.dim{color:var(--muted)}
-.finding{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden;margin-bottom:8px;box-shadow:var(--shadow)}
-.finding-head{padding:14px 18px 12px;display:flex;align-items:flex-start;gap:12px}
-.finding-id{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-lo);border:1px solid var(--accent-bd);padding:2px 8px;border-radius:4px;flex-shrink:0;margin-top:1px}
-.finding-evidence{font-size:13px;color:var(--text)}
-code{font-family:var(--mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);padding:1px 5px;border-radius:3px;color:var(--heading)}
-.finding-actions{border-top:1px solid var(--border);display:flex}
-.finding-action{flex:1;padding:10px 18px;display:flex;align-items:flex-start;gap:8px;border-right:1px solid var(--border);font-size:12px;color:var(--muted)}
-.finding-action:last-child{border-right:none}
-.al{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:4px;flex-shrink:0;margin-top:2px}
-.al.fix{background:var(--green-lo);color:var(--green);border:1px solid rgba(52,211,153,.25)}
-.al.verify{background:var(--accent-lo);color:var(--accent);border:1px solid var(--accent-bd)}
-table{width:100%;border-collapse:collapse;font-size:13px}
-thead th{padding:0 10px 10px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border)}
-thead th:first-child{padding-left:0}thead th.r{text-align:right}
-tbody tr{border-bottom:1px solid var(--border)}tbody tr:last-child{border-bottom:none}
-tbody tr:hover{background:var(--surface2)}
-td{padding:9px 10px;vertical-align:middle}td:first-child{padding-left:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.55}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:9px 18px;background:var(--panel);border-bottom:1px solid var(--border)}
+.brand{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.03em}
+.crumb{font-size:13px;color:var(--heading);font-weight:600}.crumb .dim{color:var(--muted);font-weight:400}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+.tb-meta{display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.toggle{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--border2);color:var(--muted);border-radius:5px;padding:3px 9px;cursor:pointer}
+.toggle:hover{color:var(--accent);border-color:var(--accent)}
+.shell{display:grid;grid-template-columns:188px 1fr;max-width:1180px;margin:0 auto}
+.side{position:sticky;top:43px;height:calc(100vh - 43px);overflow-y:auto;padding:18px 0;border-right:1px solid var(--border)}
+.side-h{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:0 18px 6px}
+.side a{display:block;padding:5px 18px;font-size:12px;color:var(--muted);text-decoration:none;border-left:2px solid transparent}
+.side a:hover{color:var(--heading);background:var(--panel2)}
+.side a.on{color:var(--accent);border-left-color:var(--accent);background:var(--panel2)}
+.main{padding:20px 26px 80px;min-width:0}
+.strip{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:22px}
+.stat{background:var(--panel);padding:11px 13px}
+.stat-v{font-family:var(--mono);font-size:19px;font-weight:700;color:var(--heading);line-height:1.1}
+.stat-v.g{color:var(--green)}.stat-v.r{color:var(--red)}.stat-v.a{color:var(--amber)}
+.stat-l{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:4px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;scroll-margin-top:54px}
+.ph{display:flex;align-items:center;gap:8px;padding:9px 13px;border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.ph .sub{margin-left:auto;font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px}
+.pb{padding:13px}
+.note{font-size:11px;color:var(--muted);padding:8px 13px;border-top:1px solid var(--border);line-height:1.5}.note b{color:var(--text)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--border2);background:var(--panel2)}
+th.r{text-align:right}
+td{padding:7px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--panel2)}
 .mono{font-family:var(--mono);font-size:12px;color:var(--heading)}
 .num{text-align:right;font-family:var(--mono);font-size:12px}
-.badge{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--muted)}
-.badge.claude{border-color:var(--accent-bd);color:var(--accent);background:var(--accent-lo)}
-.badge.codex{border-color:rgba(52,211,153,.25);color:var(--green);background:var(--green-lo)}
-.heat-hi{color:var(--red)}.heat-md{color:var(--yellow)}.heat-lo{color:var(--muted)}
-.drill-hint{margin-top:10px;font-size:11px;color:var(--muted);font-family:var(--mono)}
-.layer-block{margin-bottom:6px}
-.layer-row{display:grid;grid-template-columns:100px 1fr 4fr 130px;align-items:center;gap:14px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
-.l-name{font-family:var(--mono);font-size:11px;color:var(--heading)}
-.l-desc{font-size:12px;color:var(--muted)}
-.l-track{height:5px;background:var(--border);border-radius:3px;overflow:hidden}
-.l-fill{height:100%;border-radius:3px;background:var(--accent);opacity:.75}
-.l-val{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right}
-.layer-details{margin:2px 0 0}
-.layer-details summary{cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 14px;list-style:none;user-select:none}
-.layer-details summary:hover{color:var(--accent)}
-.layer-details summary::before{content:'▸ ';color:var(--border)}
-.layer-details[open] summary::before{content:'▾ '}
-.drill-list{padding:2px 14px 10px 28px;display:flex;flex-direction:column;gap:4px}
-.drill-row{font-family:var(--mono);font-size:11.5px;color:var(--text)}
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
-.m-val{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--heading);letter-spacing:-.02em;line-height:1.1}
-.m-val.accent{color:var(--accent)}.m-val.green{color:var(--green)}.m-val.red{color:var(--red)}
-.m-label{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.35}
-.m-basis{font-family:var(--mono);font-size:10px;color:var(--border);margin-top:5px}
-.footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted)}
-.footer a{color:var(--muted);text-decoration:none}.footer a:hover{color:var(--accent)}
-@media(max-width:900px){
-.shell{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}
-.header{grid-column:1}
-.sidebar{grid-column:1;grid-row:2;position:static;height:auto;border-right:none;border-bottom:1px solid var(--border);padding:12px 0;display:flex;flex-wrap:wrap}
-.sidebar-label{display:none}
-.sidebar-link{padding:6px 14px;border-left:none;border-bottom:2px solid transparent}
-.sidebar-link.active{border-bottom-color:var(--accent);border-left-color:transparent;background:none}
-.main{grid-column:1;grid-row:3;padding:28px 20px 60px}
-.metrics{grid-template-columns:repeat(2,1fr)}
-.cov-grid{grid-template-columns:repeat(3,1fr)}
-.headline-grid{grid-template-columns:1fr;gap:16px}.hl-stat{font-size:40px}
-.wf-row{grid-template-columns:104px 1fr 78px 44px 76px;gap:8px;font-size:11px}
-.layer-row{grid-template-columns:90px 1fr 3fr 110px}
-}
-@media(max-width:600px){
-.header-meta{display:none}
-.cov-grid{grid-template-columns:repeat(2,1fr)}
-.wf-row{grid-template-columns:84px 1fr 64px 70px}.wf-pct{display:none}
-.layer-row{grid-template-columns:90px 1fr 90px}.l-desc{display:none}
-.finding-actions{flex-direction:column}.finding-action{border-right:none;border-bottom:1px solid var(--border)}
-}
+.dim{color:var(--muted)}
+.sev-hi{color:var(--red);font-weight:600}.sev-md{color:var(--amber)}.sev-lo{color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--border2);color:var(--muted)}
+.badge.claude{color:var(--accent);border-color:#26415f}.badge.codex{color:var(--green);border-color:#214a2b}
+.b{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:3px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.b.measured{color:var(--green);background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.22)}
+.b.estimated{color:var(--amber);background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.22)}
+.b.count{color:var(--muted);background:var(--panel2);border:1px solid var(--border2)}
+code{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--border);padding:0 4px;border-radius:3px;color:var(--text)}
+.headline{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center}
+.hl-big{font-family:var(--mono);font-size:46px;font-weight:700;color:var(--accent);line-height:1}
+.hl-u{font-size:12px;color:var(--muted);margin-top:5px}
+.hl-d{font-size:13px;color:var(--text)}.hl-d b{color:var(--heading)}
+.covbar{display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;align-items:center}
+.covbar .legend{margin-left:auto;display:flex;gap:6px}
+.warnbox{background:rgba(210,153,34,.06);border:1px solid rgba(210,153,34,.22);color:var(--amber);font-size:11.5px;padding:8px 12px;border-radius:5px;margin:10px 13px}
+.wf{font-family:var(--mono);font-size:12px}
+.wf-row{display:grid;grid-template-columns:128px 1fr 100px 46px 78px;align-items:center;gap:10px;padding:3px 0}
+.wf-row.s1{padding-left:14px}.wf-row.s2{padding-left:30px;opacity:.85}
+.wf-l{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wf-l.root{color:var(--heading);font-weight:600}
+.tick{color:var(--border2);white-space:pre}
+.wf-bar{height:17px;background:var(--panel2);border:1px solid var(--border);border-radius:2px;overflow:hidden}
+.wf-row.s2 .wf-bar{height:12px}
+.wf-f{height:100%;display:flex;align-items:center;padding:0 6px;font-size:9px;font-weight:700;color:#0a0c10;white-space:nowrap}
+.cr{background:#5b9dff}.crp{background:#3b6db8}.crq{background:#27466e}.fr{background:#3fb950}.frp{background:#2c7d38}.frq{background:#1c5325}.cw{background:#d29922}
+.wf-t{text-align:right;color:var(--text)}.wf-p{text-align:right;color:var(--muted)}.wf-c{text-align:right;color:var(--muted);font-size:11px}
+.wf-row.root .wf-t{color:var(--heading);font-weight:600}.wf-row.root .wf-c{color:var(--heading)}
+.find{border:1px solid var(--border);border-radius:5px;margin-bottom:8px;overflow:hidden}.find:last-child{margin-bottom:0}
+.find-t{padding:10px 12px;display:flex;gap:10px;align-items:baseline}
+.fid{font-family:var(--mono);font-size:11px;color:var(--accent);background:rgba(91,157,255,.08);border:1px solid #26415f;padding:1px 7px;border-radius:3px;flex-shrink:0}
+.find-a{border-top:1px solid var(--border);display:flex}
+.fa{flex:1;padding:8px 12px;font-size:11.5px;color:var(--muted);border-right:1px solid var(--border);display:flex;gap:7px}.fa:last-child{border-right:none}
+.tag{font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:3px;flex-shrink:0;height:fit-content;margin-top:1px}
+.tag.fix{color:var(--green);border:1px solid rgba(63,185,80,.28)}.tag.ver{color:var(--accent);border:1px solid rgba(91,157,255,.28)}
+details{border-top:1px solid var(--border)}
+.drill-row td{padding:0!important}.drill-row details{border-top:none}
+summary{cursor:pointer;padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);list-style:none;user-select:none}
+summary:hover{color:var(--accent)}summary::before{content:'▸';color:var(--border2);margin-right:7px}
+details[open] summary::before{content:'▾'}
+.drill{padding:0 12px 12px}
+.mini{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+.mini th{background:transparent;padding:4px 8px;font-size:9px}.mini td{padding:3px 8px;border-bottom:1px solid var(--border)}
+.chips{margin-top:8px;display:flex;gap:18px;flex-wrap:wrap;font-size:11px}.chips b{color:var(--heading)}
+.lay{display:grid;grid-template-columns:96px 200px 1fr 120px;align-items:center;gap:12px;padding:7px 13px;border-bottom:1px solid var(--border)}
+.lay-n{font-family:var(--mono);font-size:11px;color:var(--heading)}.lay-d{font-size:11px;color:var(--muted)}
+.lay-tr{height:5px;background:var(--panel3);border-radius:3px;overflow:hidden}.lay-fl{height:100%;background:var(--accent);opacity:.75;border-radius:3px}
+.lay-v{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right}
+.mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-radius:var(--radius);overflow:hidden}
+.m{background:var(--panel);padding:12px 14px}
+.m-v{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--heading)}.m-v.g{color:var(--green)}.m-v.r{color:var(--red)}
+.m-l{font-size:10.5px;color:var(--muted);margin-top:4px}.m-b{font-family:var(--mono);font-size:9.5px;color:var(--border2);margin-top:4px}
+.ab .delta-good{color:var(--green)}.ab .delta-bad{color:var(--red)}
+.foot{margin-top:26px;padding:12px 0;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.foot .u{color:var(--green)}.foot .p{color:var(--accent)}
+.cur{display:inline-block;width:7px;height:13px;background:var(--green);vertical-align:middle;animation:bl 1.1s steps(1) infinite}
+@keyframes bl{50%{opacity:0}}
+@media(max-width:880px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;padding:8px 0}.side-h{display:none}.side a{border-left:none;padding:5px 12px}.strip{grid-template-columns:repeat(3,1fr)}.mgrid{grid-template-columns:repeat(2,1fr)}.headline{grid-template-columns:1fr}.wf-row{grid-template-columns:104px 1fr 78px 70px}.wf-p{display:none}.lay{grid-template-columns:90px 1fr 90px}.lay-d{display:none}}
 """
 
-_JS = """
-function toggleTheme(){
-  var h=document.documentElement,b=document.getElementById('theme-btn');
-  if(h.dataset.theme==='dark'){h.dataset.theme='light';b.innerHTML='☽ Dark';}
-  else{h.dataset.theme='dark';b.innerHTML='☀ Light';}
-}
-var secs=document.querySelectorAll('section[id]'),lks=document.querySelectorAll('.sidebar-link');
-var obs=new IntersectionObserver(function(es){es.forEach(function(e){
-  if(e.isIntersecting){lks.forEach(function(l){l.classList.remove('active');});
-  var a=document.querySelector('.sidebar-link[href="#'+e.target.id+'"]');if(a)a.classList.add('active');}});
-},{rootMargin:'-30% 0px -60% 0px'});
-secs.forEach(function(s){obs.observe(s);});
+_JS = r"""
+function tt(){var h=document.documentElement,b=document.getElementById('tg');if(h.dataset.theme==='dark'){h.dataset.theme='light';b.textContent='◑ dark';}else{h.dataset.theme='dark';b.textContent='◐ light';}}
+var ss=document.querySelectorAll('section[id],.panel[id]'),ls=document.querySelectorAll('.side a');
+var ob=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){ls.forEach(function(l){l.classList.remove('on')});var a=document.querySelector('.side a[href="#'+e.target.id+'"]');if(a)a.classList.add('on');}})},{rootMargin:'-15% 0px -75% 0px'});
+ss.forEach(function(s){ob.observe(s)});
 """
 
 _SHELL = """<!DOCTYPE html>
@@ -678,36 +623,23 @@ _SHELL = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>cram audit — {repo}</title>
+<title>cram audit · {repo}</title>
 <style>{css}</style>
 </head>
 <body>
+<div class="topbar">
+  <span class="brand">◆ cram</span>
+  <span class="crumb">{repo} <span class="dim">/ agent session audit</span></span>
+  <div class="tb-right">
+    <div class="tb-meta"><span>{sessions} sessions</span><span>{days}d</span><span>{today}</span></div>
+    <button class="toggle" id="tg" onclick="tt()">◐ light</button>
+  </div>
+</div>
 <div class="shell">
-  <header class="header">
-    <span class="logo">◆ cram</span>
-    <span class="header-repo">{repo}</span>
-    <span class="header-sep">—</span>
-    <span class="header-sub">agent session audit</span>
-    <div class="header-right">
-      <div class="header-meta">
-        <span>{sessions} sessions</span><span>last {days} days</span><span>{today}</span>
-      </div>
-      <button class="toggle" onclick="toggleTheme()" id="theme-btn">☀ Light</button>
-    </div>
-  </header>
-  <nav class="sidebar">
-    <div class="sidebar-label">Sections</div>
-    <a href="#headline" class="sidebar-link active">Headline</a>
-    <a href="#coverage" class="sidebar-link">Coverage</a>
-    <a href="#waterfall" class="sidebar-link">Token waterfall</a>
-    <a href="#findings" class="sidebar-link">Findings</a>
-    <a href="#leaderboard" class="sidebar-link">Leaderboard</a>
-    <a href="#layers" class="sidebar-link">Waste layers</a>
-    <a href="#metrics" class="sidebar-link">Key metrics</a>
-  </nav>
+  <nav class="side"><div class="side-h">Report</div>{side}</nav>
   <main class="main">{body}
-    <div class="footer">
-      <span>generated by <a href="https://github.com/vishbay/cram-ai">cram-ai</a> · <code>cram audit --report-html</code></span>
+    <div class="foot">
+      <span><span class="u">cram</span><span class="p">@{repo}</span>$ cram audit --report-html<span class="cur"></span></span>
       <span>{provider} pricing · conservative methodology</span>
     </div>
   </main>

@@ -887,6 +887,38 @@ def run_report(repo_root: str, days: int = 30, all_projects: bool = False,
         print(f"Wrote {out_path}")
 
 
+def _build_drilldowns(leaderboard: list[dict], repo_root: str, top: int = 3) -> dict:
+    """Per-turn timelines for the heaviest sessions, keyed by session_id.
+
+    Best-effort: resolves each session's transcript and builds its timeline;
+    silently skips any that can't be resolved or parsed (e.g. Cursor sessions,
+    or Codex sessions outside the date-tree). Used to embed expandable
+    drilldowns under the HTML leaderboard.
+    """
+    out: dict = {}
+    for s in leaderboard[:top]:
+        sid = s.get('session_id')
+        if not sid:
+            continue
+        try:
+            path = _resolve_session_path(sid, repo_root)
+            if not path:
+                continue
+            sd = _codex_sessions_dir()
+            is_codex = sd and os.path.abspath(path).startswith(os.path.abspath(sd))
+            parsed = (audit_events.parse_codex if is_codex
+                      else audit_events.parse_claude)(path)
+            if not parsed:
+                continue
+            tl = audit_events.derive_session_timeline(
+                *parsed, big_result_bytes=BIG_RESULT_BYTES)
+            if tl:
+                out[sid] = tl
+        except Exception:
+            continue
+    return out
+
+
 def run_report_html(repo_root: str, days: int = 30, all_projects: bool = False,
                     out_path: str | None = None, reingest: bool = False,
                     open_browser: bool | None = None) -> None:
@@ -912,8 +944,12 @@ def run_report_html(repo_root: str, days: int = 30, all_projects: bool = False,
     finally:
         store.close()
 
+    # Embedded drilldowns: per-turn timelines for the top leaderboard sessions
+    # (best-effort — skip any that can't be resolved or parsed).
+    drilldowns = _build_drilldowns(data.get('leaderboard') or [], repo_root, top=3)
+
     out_path = out_path or 'cram-audit-report.html'
-    html = render_report_html(data, layers, repo_root)
+    html = render_report_html(data, layers, repo_root, drilldowns=drilldowns)
     with open(out_path, 'w') as f:
         f.write(html)
     abs_path = os.path.abspath(out_path)

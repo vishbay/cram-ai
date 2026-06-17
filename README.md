@@ -17,6 +17,13 @@ Most token tools promise savings. cram asks the useful engineering question:
 
 It is local-first, transcript-based, and honest about what is measured versus estimated.
 
+[`cram audit --report-html`](#html-report) renders the whole audit as one self-contained file:
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/img/report-light.png">
+  <img alt="cram audit HTML report" src="docs/img/report-dark.png" width="100%">
+</picture>
+
 ---
 
 ## Why cram exists
@@ -651,11 +658,25 @@ cram audit --report-html --no-open
 ```
 
 A single self-contained HTML file — inline CSS/JS, no external fonts or fetches — so it
-travels: open it locally, attach it to a PR, drop it in Slack. It renders the token
-waterfall, findings with fix/verify, the session leaderboard, the waste layers with
-collapsible top-contributor drilldowns, and the key metrics. Responsive, with a
-light/dark toggle. It's built from the same `collect_audit()` data as `cram audit
---report`, so it makes no claim the text report doesn't.
+travels: open it locally, attach it to a PR, drop it in Slack. A restrained dark data
+dashboard (think Grafana / GitHub Actions logs, not a frosted-glass AI console) with a
+light/dark toggle. It renders:
+
+- a KPI **stat strip** and the pre-edit **headline**
+- **coverage & confidence** (sessions found / measured / excluded / parse failures, source mix, measured·estimated·count legend)
+- the **token waterfall** with per-component `$`/session
+- **retry loops** — the same command failing repeatedly
+- **cost by waste layer** ($-ranked, with basis)
+- the **session leaderboard** with expandable per-turn drilldowns (carried results, failed commands)
+- **waste layers** with collapsible top-contributor lists
+- **findings** with fix → verify
+- **context on/off** A/B when the window contains both
+- **key metrics**
+
+It's built from the same `collect_audit()` data as `cram audit --report`, so it makes no
+claim the text report doesn't.
+
+![cram audit HTML report — light](docs/img/report-light.png)
 
 ---
 

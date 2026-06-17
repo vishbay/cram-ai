@@ -171,6 +171,43 @@ class TestRenderReport:
                 f'got {val} (likely eff-token total leaked in)')
 
 
+class TestRetryLoops:
+    def _bash_fail(self, cmd, tid):
+        return [{'type': 'tool_use', 'id': tid, 'name': 'Bash', 'input': {'command': cmd}},
+                {'type': 'tool_result', 'tool_use_id': tid, 'content': 'boom', 'is_error': True}]
+
+    def test_top_failed_commands_aggregate(self, tmp_path, monkeypatch):
+        # 'pytest -x' fails in two sessions; 'make lint' once
+        _setup(tmp_path, monkeypatch, [
+            self._bash_fail('pytest -x', 'a') + [_usage(input_tokens=500)],
+            self._bash_fail('pytest -x', 'b')
+            + self._bash_fail('make lint', 'c') + [_usage(input_tokens=500)],
+        ])
+        data = collect_audit(str(tmp_path), days=365)
+        top = {c['cmd']: c for c in data['top_failed_commands']}
+        assert top['pytest -x'] == {'cmd': 'pytest -x', 'failures': 2, 'sessions': 2}
+        assert top['make lint']['failures'] == 1
+
+    def test_report_renders_retry_loops_section(self, tmp_path, monkeypatch):
+        _setup(tmp_path, monkeypatch, [
+            self._bash_fail('pytest -x', 'a')
+            + self._bash_fail('pytest -x', 'b') + [_usage(input_tokens=500)],
+        ])
+        data = collect_audit(str(tmp_path), days=365)
+        md = render_report(data, str(tmp_path))
+        assert '## Retry loops' in md
+        assert 'pytest -x' in md
+        assert '| 2 | 1 | `pytest -x` |' in md
+
+    def test_no_retry_section_when_no_repeated_failures(self, tmp_path, monkeypatch):
+        _setup(tmp_path, monkeypatch, [
+            self._bash_fail('pytest -x', 'a') + [_usage(input_tokens=500)],  # single failure
+        ])
+        data = collect_audit(str(tmp_path), days=365)
+        md = render_report(data, str(tmp_path))
+        assert '## Retry loops' not in md   # only surfaces repeated failures (>1)
+
+
 class TestSessionIdent:
     def test_extracts_uuid_from_codex_rollout(self):
         from cram.audit_events import _session_ident

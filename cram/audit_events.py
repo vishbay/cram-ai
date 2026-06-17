@@ -164,6 +164,19 @@ def repo_rel(path: str, repo_root: str) -> str:
     return path[len(repo_sep):] if path.startswith(repo_sep) else path
 
 
+def _cmd_label(tool: str | None, cmd: str | None, file_path: str | None) -> str:
+    """A stable, human label for a (failed) tool call — the retry-loop key.
+
+    Bash/shell commands collapse to their normalized text (so the same command
+    run repeatedly groups together); other tools fall back to tool + file.
+    """
+    if cmd:
+        return ' '.join(cmd.split())[:120]
+    if file_path:
+        return f'{tool or "tool"} {os.path.basename(file_path)}'
+    return tool or '(tool)'
+
+
 def _cursor_files_from_entry(entry: dict) -> list[str]:
     """Extract referenced file paths from a Cursor agent-transcript entry (deduplicated)."""
     seen: set[str] = set()
@@ -218,15 +231,22 @@ def parse_claude(path: str) -> tuple[SessionMeta, list[Event]] | None:
                         fp = inp.get('file_path', '')
                         if fp:
                             fpath = fp
+                    # Carry the tool_use id + command so an error tool_result can
+                    # be linked back to the command that produced it (retry-loop
+                    # drilldown). cmd is the Bash/shell command when present.
+                    ex = {'id': block.get('id')}
+                    if cmd:
+                        ex['cmd'] = cmd
                     if is_read:
                         # Bash reads carry no file_path: the legacy analyzer only
                         # tracked redundant reads for READ_TOOLS calls.
                         events.append(Event(seq, 'read', tool=name,
-                                            file_path=fpath if name in READ_TOOLS else None))
+                                            file_path=fpath if name in READ_TOOLS else None,
+                                            extras=ex))
                     elif is_write:
-                        events.append(Event(seq, 'edit', tool=name, file_path=fpath))
+                        events.append(Event(seq, 'edit', tool=name, file_path=fpath, extras=ex))
                     else:
-                        events.append(Event(seq, 'tool_call', tool=name))
+                        events.append(Event(seq, 'tool_call', tool=name, extras=ex))
                     seq += 1
 
                 for u in _find_usage(msg):
@@ -245,7 +265,8 @@ def parse_claude(path: str) -> tuple[SessionMeta, list[Event]] | None:
                     except Exception:
                         size = 0
                     events.append(Event(seq, 'tool_result', bytes=size,
-                                        is_error=bool(tr.get('is_error'))))
+                                        is_error=bool(tr.get('is_error')),
+                                        extras={'tool_use_id': tr.get('tool_use_id')}))
                     seq += 1
     except Exception:
         return None
@@ -432,7 +453,8 @@ def parse_codex(path: str) -> tuple[SessionMeta, list[Event]] | None:
                     is_read = any(c in cmd for c in BASH_READ_CMDS)
                     kind = 'read' if is_read else 'tool_call'
                     events.append(Event(seq, kind, tool='exec_command',
-                                        extras={'workdir': wd, 'cmd': cmd}))
+                                        extras={'workdir': wd, 'cmd': cmd,
+                                                'id': p.get('call_id')}))
                     seq += 1
 
                 elif pt == 'custom_tool_call' and p.get('name') == 'apply_patch':
@@ -454,7 +476,8 @@ def parse_codex(path: str) -> tuple[SessionMeta, list[Event]] | None:
                     if isinstance(out, str) and 'Process exited with code' in out:
                         for code in range(2, 128):
                             if f'code {code}' in out:
-                                events.append(Event(seq, 'tool_result', is_error=True))
+                                events.append(Event(seq, 'tool_result', is_error=True,
+                                                    extras={'tool_use_id': p.get('call_id')}))
                                 seq += 1
                                 break
     except Exception:
@@ -500,6 +523,11 @@ def derive_session(meta: SessionMeta, events: list[Event],
     error_results = 0
     any_relevant = False  # cursor-db session-level gate
 
+    # Retry-loop drilldown: map tool_use id → command label, then attribute each
+    # error tool_result back to the command that produced it and group by label.
+    id_to_label: dict[str, str] = {}
+    failed_cmd_counts: dict[str, int] = {}
+
     # Measured orientation: raw token sums for requests before the first
     # counted edit (the same first_edit_seen boundary reads_before_edit uses).
     requests_before_edit = 0
@@ -509,6 +537,13 @@ def derive_session(meta: SessionMeta, events: list[Event],
 
     for ev in events:
         kind = ev.kind
+
+        # Register every tool_use's id → command label (any kind: a failing
+        # command is usually a 'tool_call' like Bash/exec, not a read/edit).
+        ev_extras = ev.extras or {}
+        _bid = ev_extras.get('id')
+        if _bid and kind in ('read', 'edit', 'tool_call'):
+            id_to_label[_bid] = _cmd_label(ev.tool, ev_extras.get('cmd'), ev.file_path)
 
         if kind == 'request_usage':
             cache_writes += ev.tok_cache_write
@@ -526,6 +561,8 @@ def derive_session(meta: SessionMeta, events: list[Event],
         if kind == 'tool_result':
             if ev.is_error:
                 error_results += 1
+                label = id_to_label.get(ev_extras.get('tool_use_id')) or '(unknown command)'
+                failed_cmd_counts[label] = failed_cmd_counts.get(label, 0) + 1
             size = ev.bytes or 0
             if size > big_result_bytes:
                 big_results += 1
@@ -622,6 +659,13 @@ def derive_session(meta: SessionMeta, events: list[Event],
         'carried_read_tokens':     carried_read_tokens,
         'redundant_reads':         sum(c - 1 for c in read_counts.values() if c > 1),
         'error_results':           error_results,
+        # Failed commands grouped by normalized text, worst-first. The retry-loop
+        # signal: the same command failing repeatedly (e.g. a wrong test command
+        # run four times). [{cmd, failures}].
+        'failed_commands':         [
+            {'cmd': lbl, 'failures': n}
+            for lbl, n in sorted(failed_cmd_counts.items(), key=lambda kv: -kv[1])
+        ],
         'edit_churn':              sum(c - 1 for c in edit_counts.values() if c > 1),
         'mtime':                   meta.mtime,
         # Session identifier. Cursor-db composers share a path, so prefer their
@@ -673,6 +717,8 @@ def derive_session_timeline(meta: SessionMeta, events: list[Event],
     carried: list[dict] = []
     read_counts: dict[str, int] = {}
     retries = 0
+    id_to_label: dict[str, str] = {}
+    failed_cmd_counts: dict[str, int] = {}
 
     pending: list[str] = []   # tool activity since the previous request row
     last_read_file: str | None = None
@@ -680,6 +726,11 @@ def derive_session_timeline(meta: SessionMeta, events: list[Event],
 
     for ev in events:
         kind = ev.kind
+
+        _ex = ev.extras or {}
+        _bid = _ex.get('id')
+        if _bid and kind in ('read', 'edit', 'tool_call'):
+            id_to_label[_bid] = _cmd_label(ev.tool, _ex.get('cmd'), ev.file_path)
 
         if kind == 'read':
             files = [ev.file_path] if ev.file_path else (ev.extras or {}).get('files') or []
@@ -703,7 +754,11 @@ def derive_session_timeline(meta: SessionMeta, events: list[Event],
         if kind == 'tool_result':
             if ev.is_error:
                 retries += 1
-                pending.append('✗ tool error')
+                label = id_to_label.get(_ex.get('tool_use_id'))
+                failed_cmd_counts[label or '(unknown command)'] = (
+                    failed_cmd_counts.get(label or '(unknown command)', 0) + 1)
+                short = (label[:50] if label else None)
+                pending.append(f'✗ failed: {short}' if short else '✗ tool error')
             size = ev.bytes or 0
             if size > big_result_bytes:
                 tok = size // 4
@@ -775,4 +830,8 @@ def derive_session_timeline(meta: SessionMeta, events: list[Event],
         'carried_read_tokens': sum(c['carried_tokens'] for c in carried),
         'redundant':     redundant,
         'retries':       retries,
+        'failed_commands': [
+            {'cmd': lbl, 'failures': n}
+            for lbl, n in sorted(failed_cmd_counts.items(), key=lambda kv: -kv[1])
+        ],
     }

@@ -187,6 +187,21 @@ def render_report(data: dict, repo_root: str) -> str:
                 f'| {s.get("error_results", 0)} | {s.get("redundant_reads", 0)} |'
             )
 
+    # ── Retry loops (most-retried failed commands) ────────────────────────────
+    failed_cmds = [c for c in data.get('top_failed_commands', []) if c['failures'] > 1]
+    if failed_cmds:
+        lines.append('')
+        lines.append('## Retry loops')
+        lines.append('')
+        lines.append('The same command failing repeatedly — wasted tokens on re-runs. '
+                     'Drill in with `cram audit --layer retries`.')
+        lines.append('')
+        lines.append('| Failures | Sessions | Command |')
+        lines.append('|---------:|---------:|---------|')
+        for c in failed_cmds[:10]:
+            cmd = c['cmd'].replace('|', '\\|').replace('`', "'")
+            lines.append(f"| {c['failures']} | {c['sessions']} | `{cmd}` |")
+
     # ── Top repeated files ────────────────────────────────────────────────────
     repeated = [t for t in data.get('top_read_files', []) if t[1] > 1]
     if repeated:

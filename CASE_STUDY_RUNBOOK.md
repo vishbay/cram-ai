@@ -29,6 +29,23 @@ address it. Doubles as cram's first demo asset and an end-to-end harness check.
 - Touch code an agent must *find* (so orientation/bloat can show up).
 - Open at the pinned SHA. Record issue numbers + URLs.
 
+**Task mix matters.** cram is expected to help when the agent has real
+orientation work, and to be neutral or worse when the prompt already gives away
+the exact file and test.
+
+| Issue / task type | Share of agentic coding work | Expected cram impact |
+|---|---:|---:|
+| Exact file + exact test known | 20–30% | Low: −5% to +10% |
+| Natural issue, likely area known but not exact fix | 35–45% | Strong: 20–50% savings |
+| Large unfamiliar repo / vague bug | 10–20% | Very strong: 30–60%+ savings |
+| Tiny obvious one-file task | 10–15% | Neutral or negative |
+| Long-running multi-step agent task | 10–20% | Mixed: helps orientation; output/context bloat still needs separate fixes |
+| Repeated sessions / multi-agent same repo | 5–15% | High cumulative value |
+
+For the strongest before/after test, prefer a natural issue prompt: enough detail
+to define the bug and success condition, but not the exact implementation file
+or line unless a normal developer would already know it.
+
 Record: `repo@SHA`, the two issue URLs, model id, cram version, date.
 
 ---

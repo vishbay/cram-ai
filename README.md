@@ -19,7 +19,7 @@ It is local-first, transcript-based, and honest about what is measured versus es
 
 [`cram audit --report-html`](#html-report) renders the whole audit as one self-contained file:
 
-![cram audit HTML report](docs/img/report.gif)
+![cram audit HTML report](docs/img/report-tour.gif)
 
 ---
 

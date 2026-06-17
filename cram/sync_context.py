@@ -65,7 +65,10 @@ def _with_structure_hash(content: str, struct_hash: str) -> str:
 def update_architecture_md(structure: str, diff: str, current: str) -> str:
     prompt = (
         f"Update this ARCHITECTURE.md based on recent changes.\n"
-        f"Keep it under {MAX_LINES} lines. Only update what changed.\n\n"
+        f"Keep it under {MAX_LINES} lines. Only update what changed.\n"
+        f"The repo structure below is the ground truth: do not mention files "
+        f"that are absent from it. Remove any existing entry whose file no "
+        f"longer appears in the structure.\n\n"
         f"Current ARCHITECTURE.md:\n{current}\n\n"
         f"Repo structure:\n{structure}\n\n"
         f"Recent git diff:\n{diff}\n\n"

@@ -11,7 +11,7 @@ from cram.audit import _layer_rows, LAYERS, run_layer
 def _sess(**kw):
     base = dict(read_file_counts={}, edit_file_counts={}, big_results=0,
                 carried_read_tokens=0, error_results=0, reads_before_edit=0,
-                edits=0, session_id='', source='claude')
+                edits=0, session_id='', source='claude', failed_commands=[])
     base.update(kw)
     return base
 
@@ -39,11 +39,16 @@ class TestLayerRows:
         ], '/r')
         assert [r['session_id'] for r in rows] == ['y', 'x']
 
-    def test_retries_excludes_clean_sessions(self):
+    def test_retries_groups_failed_commands_across_sessions(self):
+        # the same command failing in two sessions aggregates; a one-off ranks below
         rows = _layer_rows('retries', [
-            _sess(error_results=2, session_id='x'), _sess(error_results=0),
+            _sess(failed_commands=[{'cmd': 'pytest tests/', 'failures': 2},
+                                   {'cmd': 'make lint', 'failures': 1}]),
+            _sess(failed_commands=[{'cmd': 'pytest tests/', 'failures': 1}]),
+            _sess(failed_commands=[]),   # clean session contributes nothing
         ], '/r')
-        assert rows == [{'session_id': 'x', 'source': 'claude', 'failed': 2}]
+        assert rows[0] == {'cmd': 'pytest tests/', 'failures': 3, 'sessions': 2}
+        assert {'cmd': 'make lint', 'failures': 1, 'sessions': 1} in rows
 
     def test_orientation_edit_sessions_only(self):
         rows = _layer_rows('orientation', [

@@ -567,6 +567,20 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     measured_pool = [s for s in all_sessions if s.get('input_tokens', 0) > 0]
     leaderboard = sorted(measured_pool, key=lambda s: s['input_tokens'], reverse=True)[:10]
 
+    # Retry-loop evidence: failed commands grouped across sessions, worst-first.
+    # The signal is the SAME command failing repeatedly (the "ran the wrong test
+    # command four times" case), so rank by total failures then session spread.
+    from collections import Counter as _Counter
+    _fc_fail: _Counter = _Counter()
+    _fc_sess: _Counter = _Counter()
+    for s in all_sessions:
+        for fc in (s.get('failed_commands') or []):
+            _fc_fail[fc['cmd']] += fc['failures']
+            _fc_sess[fc['cmd']] += 1
+    top_failed_commands = sorted(
+        ({'cmd': c, 'failures': _fc_fail[c], 'sessions': _fc_sess[c]} for c in _fc_fail),
+        key=lambda r: (-r['failures'], -r['sessions'], r['cmd']))[:10]
+
     # Cost by waste layer — the overlapping diagnostics (NOT the spine partition).
     # These do not sum to effective input: orientation pre-edit cache reads are
     # already inside the spine's "cache read", etc. Each row carries its own
@@ -659,6 +673,7 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'weekly':                    weekly,
         'recent':                    recent,
         'leaderboard':               leaderboard,
+        'top_failed_commands':       top_failed_commands,
         'measured_pool_sessions':    len(measured_pool),
         'layer_costs':               layer_costs,
         'token_spine':               token_spine,
@@ -784,6 +799,12 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
         print(f"    Failed tool calls/session:    {data['avg_error_results']:.1f}"
               f"  ({data['sessions_with_errors']}/{total} sessions had failures)")
         print(f"    Same-file re-edits/session:   {data['avg_edit_churn']:.1f}")
+        top_fc = [c for c in data.get('top_failed_commands', []) if c['failures'] > 1]
+        if top_fc:
+            print(f"    Most-retried failed commands (same command failing repeatedly):")
+            for c in top_fc[:5]:
+                scope = f"{c['sessions']} session{'s' if c['sessions'] != 1 else ''}"
+                print(f"      {c['failures']:>3}× in {scope}   {c['cmd'][:70]}")
 
     repeated_files = [t for t in data['top_read_files'] if t[1] > 1]
     if repeated_files:
@@ -1089,6 +1110,9 @@ def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
 
     if tl['retries']:
         print(f"\n  Failed tool calls (retry loops): {tl['retries']}")
+        for fc in tl.get('failed_commands', [])[:5]:
+            scope = f"{fc['failures']}× failed" if fc['failures'] > 1 else "failed"
+            print(f"    {scope}: {fc['cmd'][:70]}")
     print()
 
 
@@ -1137,10 +1161,17 @@ def _layer_rows(layer: str, sessions: list[dict], repo_root: str) -> list[dict]:
         return rows
 
     if layer == 'retries':
-        rows = [{'session_id': s.get('session_id', ''), 'source': s.get('source', 'claude'),
-                 'failed': s['error_results']}
-                for s in sessions if s.get('error_results')]
-        rows.sort(key=lambda r: -r['failed'])
+        # Group failed tool calls by command across sessions — the retry-loop
+        # signal is the SAME command failing repeatedly (e.g. a wrong test
+        # command run four times), not just a per-session error count.
+        fails: Counter = Counter()
+        sess: Counter = Counter()
+        for s in sessions:
+            for fc in (s.get('failed_commands') or []):
+                fails[fc['cmd']] += fc['failures']
+                sess[fc['cmd']] += 1
+        rows = [{'cmd': c, 'failures': fails[c], 'sessions': sess[c]} for c in fails]
+        rows.sort(key=lambda r: (-r['failures'], -r['sessions'], r['cmd']))
         return rows
 
     if layer == 'orientation':
@@ -1165,7 +1196,8 @@ def format_layer_row(layer: str, r: dict, repo_root: str) -> str:
         return (f"{r['carried_tokens']:,} carried tok ({r['big_results']} big result"
                 f"{'s' if r['big_results'] != 1 else ''})  {r['session_id'][:8]} · {r['source']}")
     if layer == 'retries':
-        return f"{r['failed']} failed calls  {r['session_id'][:8]} · {r['source']}"
+        scope = f"{r['sessions']} session{'s' if r['sessions'] != 1 else ''}"
+        return f"{r['failures']}× failed in {scope}  {r['cmd']}"
     if layer == 'orientation':
         return f"{r['reads_before_edit']} reads before 1st edit  {r['session_id'][:8]} · {r['source']}"
     return str(r)

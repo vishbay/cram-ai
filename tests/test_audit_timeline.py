@@ -155,6 +155,35 @@ class TestWasteAttribution:
         ])
         assert _timeline(p)['retries'] == 2
 
+    def test_failed_commands_linked_and_grouped(self, tmp_path):
+        # the same Bash command failing twice groups into one row with failures=2
+        p = str(tmp_path / 's.jsonl')
+        _write_raw(p, [
+            {'type': 'tool_use', 'id': 'a', 'name': 'Bash',
+             'input': {'command': 'pytest tests/'}},
+            {'type': 'tool_result', 'tool_use_id': 'a', 'content': 'boom', 'is_error': True},
+            {'type': 'tool_use', 'id': 'b', 'name': 'Bash',
+             'input': {'command': 'pytest tests/'}},
+            {'type': 'tool_result', 'tool_use_id': 'b', 'content': 'boom', 'is_error': True},
+            {'type': 'tool_use', 'id': 'c', 'name': 'Bash',
+             'input': {'command': 'make lint'}},
+            {'type': 'tool_result', 'tool_use_id': 'c', 'content': 'nope', 'is_error': True},
+            _usage(cache_read=1_000),
+        ])
+        fc = _timeline(p)['failed_commands']
+        assert fc[0] == {'cmd': 'pytest tests/', 'failures': 2}
+        assert {'cmd': 'make lint', 'failures': 1} in fc
+
+    def test_failed_command_unknown_when_no_link(self, tmp_path):
+        # an error result with no resolvable tool_use_id falls back gracefully
+        p = str(tmp_path / 's.jsonl')
+        _write_raw(p, [
+            {'type': 'tool_result', 'content': 'boom', 'is_error': True},
+            _usage(cache_read=1_000),
+        ])
+        fc = _timeline(p)['failed_commands']
+        assert fc == [{'cmd': '(unknown command)', 'failures': 1}]
+
 
 class TestRunSessionCLI:
     def _setup(self, tmp_path, monkeypatch, messages, name='s-abc123.jsonl'):

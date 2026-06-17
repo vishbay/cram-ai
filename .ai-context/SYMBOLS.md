@@ -37,7 +37,7 @@ tests/test_audit_drilldown.py: TestPerSessionFileCounts, TestTopReadFiles
 tests/test_audit_findings.py: TestRules, TestEndToEnd
 tests/test_audit_layers.py: TestLayerRows, TestRunLayer
 tests/test_audit_measured.py: TestPerSessionMeasured, TestAggregateMeasured, TestCodexRelativePatchPaths
-tests/test_audit_report.py: TestRenderReport, TestSessionIdent, TestRunReport
+tests/test_audit_report.py: TestRenderReport, TestRetryLoops, TestSessionIdent, TestRunReport
 tests/test_audit_report_html.py: TestRenderReportHtml, TestRunReportHtml
 tests/test_audit_store.py: TestResolveDbPath, TestRoundtrip, TestLedger, TestInvalidation, TestCursorDbSessions, TestIncrementalCollect, TestParseFailureSurfacing, TestContextModeDetection, TestContextModeSegment, TestIngestProgress
 tests/test_audit_timeline.py: TestTimelineRows, TestConsecutiveUsageCollapse, TestWasteAttribution, TestRunSessionCLI

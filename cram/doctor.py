@@ -30,9 +30,9 @@ def main() -> None:
 
     # ── Python ────────────────────────────────────────────────────
     v = sys.version_info
-    ok = v >= (3, 8)
+    ok = v >= (3, 10)
     _row(ok, f'Python {v.major}.{v.minor}.{v.micro}',
-         'required ≥ 3.8' if not ok else f'at {sys.executable}')
+         'required ≥ 3.10' if not ok else f'at {sys.executable}')
     if not ok:
         errors += 1
 

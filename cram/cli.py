@@ -23,7 +23,7 @@ Commands:
   hook        install|uninstall [path]     Manage the git post-commit hook
   mcp         [--repo PATH]                Start MCP server (stdio) for Claude Code / agents
 
---target choices: cursor | claude | copilot | codex | windsurf | all
+--target choices: cursor | claude | copilot | codex | windsurf | gemini | all
   Set a default in .ai-context/config.toml:  [task] default_target = "cursor"
 
 Flags: -V, --version   Print the cram-ai version and exit

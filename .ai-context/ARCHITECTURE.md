@@ -13,6 +13,7 @@ Core Python package containing main functionality:
 - `init.py` - Initializes project configuration and CLAUDE.md files; triggers hook installation
 - `sync_context.py` - Synchronizes context with external systems and backends; error-resilient ARCHITECTURE.md updates with structure-hash deduplication
 - `status.py` - Shows .ai-context/ file freshness and repo sync state
+- `doctor.py` - Checks local setup, including Python >=3.10, models, hooks, git, and context files
 - `hooks.py` - Git post-commit and commit-msg hook installer for automated sync and decision recording
 - `mcp_server.py` - MCP server for Claude Code integration with task slot namespacing and decision proposals
 - `session.py` - Session state management: task archiving, slot tracking, grace period handling
@@ -38,23 +39,24 @@ Core Python package containing main functionality:
 - `templates/` - Template files for project initialization
 - `examples/rig/` - Example task corpus and pre-made fixtures for cram rig testing
 
+### `.github/`
+- `.github/workflows/test.yml` - CI test workflow plus package build, metadata check, wheel install, and CLI smoke tests
+
 ### `docs/`
 - `docs/img/report-walkthrough.gif` - README animated preview for the HTML audit report
 - `docs/img/report-dark.png` and `docs/img/report-light.png` - Static README screenshots for the HTML audit report in dark and light themes
 
 ### `tests/`
-Test suite for the package functionality, including audit aggregate/report coverage, HTML report rendering, layer drilldown tests, retry-loop report coverage, context on/off rendering, and embedded session drilldown tests.
+Test suite for the package functionality, including audit aggregate/report coverage, HTML report rendering, layer drilldown tests, retry-loop report coverage, context on/off rendering, embedded session drilldown tests, and package version/metadata drift guards.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `pyproject.toml` | Python package metadata and build configuration; single source of truth for release version |
-| `setup.py` | setuptools shim for pip compatibility |
-| `requirements.txt` | Python dependencies |
+| `.github/workflows/test.yml` | CI for tests, package build validation, Twine metadata checks, wheel install, and CLI smoke tests |
 | `CASE_STUDY.md` | Real-world case study demonstrating profiler (token measurement) and referee (before/after verification) on GitHub issues |
 | `CASE_STUDY_RUNBOOK.md` | Reproducible runbook for case study; demonstrates profiler and referee methodology |
-| `PROJECT_CONTEXT.md` | Project goals and context documentation |
 | `PLAN_CARRIED_OUTPUT.md` | Carried-output optimization loop design (advisory-tightening phase) |
 
 ## Tech Stack
@@ -77,6 +79,7 @@ Test suite for the package functionality, including audit aggregate/report cover
 - Context synchronization across backends with automated git hooks
 - **Output protection by default**: Command outputs byte-capped to prevent token waste
 - Repository status monitoring (file freshness, sync state, token budgets)
+- Setup diagnostics with `cram doctor`, including Python >=3.10 validation
 - Claude and Codex CLI integration via existing subscription login; direct API providers require keys
 - Task slot namespacing for concurrent agent invocations
 - **Architectural decision tracking**: Record and mine decisions from git history
@@ -108,7 +111,7 @@ CLI commands dispatched through unified `cram` entry point:
 - `cram audit --report-html [FILE] [--no-open]` - Emit a standalone HTML dashboard report; defaults to `cram-audit-report.html`, embeds top leaderboard session drilldowns when available, and opens in a browser when interactive
 - `cram benchmark [--days N]` - Show token savings vs full-repo auto-indexing
 - `cram rig <corpus-path> [--observe]` - Run task fixtures against agentic optimizer; verify correctness and cost
-- `cram doctor [path]` - Check setup: models, hooks, git, context files
+- `cram doctor [path]` - Check setup: Python >=3.10, models, hooks, git, context files
 - `cram hook install|uninstall [path]` - Manage git post-commit and commit-msg hooks
 - `cram mcp [--repo PATH]` - Start MCP server (stdio) for Claude Code / agents
 
@@ -137,10 +140,10 @@ Shared context files (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.
 
 ## Dependencies
 
-All Python dependencies specified in `requirements.txt` and `pyproject.toml`. Install with `pip install -e .` or `pip install cram-ai`.
+All Python dependencies specified in `pyproject.toml`. Install with `pip install -e .` or `pip install cram-ai`.
 
 Optional extras:
 - `cram[mcp]` - MCP server support (depends on mcp>=1.0.0)
 - `cram[multi-provider]` - Multi-provider LLM support (depends on litellm>=1.40.0)
 
-<!-- cram:structure-hash 844a47f9762f9e8e69fa2ba554270c5821a040a4679a5fcb7fb9b15f0560ec2c -->
+<!-- cram:structure-hash b4678b3c1cc8ba27fafc6e825fde7e2b2abada1c5230296494ceb2250cb21ae1 -->

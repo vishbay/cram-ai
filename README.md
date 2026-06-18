@@ -763,6 +763,5 @@ Audit-metric changes should be additive and clearly labeled as measured or estim
 Apache-2.0. See [LICENSE](LICENSE).
 
 cram is open source and local-first. The local single-developer workflow — audit, event
-store, audit CLI, findings, context layer, and markdown reports — is open source. Hosted,
-multi-developer team features may be offered later around the open core. (Concurrent agents on
+store, audit CLI, findings, context layer, and markdown reports — is open source. (Concurrent agents on
 one repo are supported today; see [Concurrency and team](#concurrency-and-team).)

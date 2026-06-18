@@ -18,6 +18,35 @@ context layer reduces that waste **at equal task success**.
 
 ---
 
+## 0.8.1 re-run pilot — profiler validation (baseline, N=3)
+
+A fresh pilot on **2026-06-18** to confirm the profiler pipeline still reproduces end-to-end on
+the current release, and to seed a future full re-run.
+
+- **Tool:** cram-ai 0.8.1 · **Runner:** `claude -p` · **Model:** `claude-opus-4-8`
+- **Issue:** #3571 (the localized `_termui_impl.py` bug) · **Arm:** baseline only · **N=3**
+- Raw per-run metrics: [`examples/case-study/results/3571-baseline-opus4.8-2026-06-18.json`](examples/case-study/results/3571-baseline-opus4.8-2026-06-18.json)
+
+| Run | Requests | Reads before edit | Peak ctx | `_termui_impl.py` reads | Redundant reads |
+|---|---:|---:|---:|---:|---:|
+| 1 | 16 | 3 | 17,652 | 4 | 3 |
+| 2 | 13 | 5 | 18,455 | 3 | 2 |
+| 3 | 11 | 4 | 16,891 | 2 | 1 |
+| **mean** | **13.3** | **4.0** | **17,666** | **3** | **2.0** |
+
+**Read:** the pipeline reproduces — all three runs landed the fix in `_termui_impl.py` (the exact
+file the original profile pointed at), and `cram audit` measured each session. The qualitative
+finding holds: a localized bug still drives repeated re-reads of the central file (~3×) with
+fast orientation (~4 reads before the first edit).
+
+**Not comparable to the 0.5.1 tables below.** This pilot ran on **`claude-opus-4-8`**, a stronger
+model than the original **`sonnet`** runs, so the lower absolute waste (peak ~17.7k vs ~32.5k,
+~13 vs ~21 requests) reflects the model, **not** a cram change — it is not a like-for-like
+before/after. The before/after (cram-context) arm, issue #2786, and the Codex runner were **not**
+re-run in this pilot; the 0.5.1 results below stand as the recorded before/after.
+
+---
+
 ## Where cram should help
 
 The expected savings depend on how much orientation the agent must do. These

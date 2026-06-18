@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- `CASE_STUDY.md`: added a 0.8.1 re-run pilot (issue #3571, baseline, N=3, `claude-opus-4-8`)
+  validating the profiler pipeline end-to-end; raw results committed under
+  `examples/case-study/results/`. Clearly marked not-comparable to the 0.5.1 `sonnet` tables.
 - README leads with the zero-config wedge: a "Try it in 10 seconds — no API key" section and a
   badge, making explicit that the `cram audit` profiler is 100% local and never calls a model.
 - README referee section now shows a demo GIF of `cram rig` refusing to credit a cheap-but-broken

@@ -1,0 +1,26 @@
+[
+  {
+    "run": "run1-baseline",
+    "requests": 16,
+    "rbe": 3.0,
+    "peak": 17652,
+    "termui_reads": 4,
+    "redundant": 3.0
+  },
+  {
+    "run": "run2-baseline",
+    "requests": 13,
+    "rbe": 5.0,
+    "peak": 18455,
+    "termui_reads": 3,
+    "redundant": 2.0
+  },
+  {
+    "run": "run3-baseline",
+    "requests": 11,
+    "rbe": 4.0,
+    "peak": 16891,
+    "termui_reads": 2,
+    "redundant": 1.0
+  }
+]

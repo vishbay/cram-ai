@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format is based on
   Safe because rig runs in throwaway per-task workdirs.
 
 ### Added
+- **Open leaderboard / "submit your optimizer" flow** for `cram-bench-v1`: a seed result
+  (`baseline` vs `cram` vs `repomix` on `claude-opus-4-8`) committed under
+  `examples/rig/bench/results/`, a submission validator (`scripts/validate_bench_result.py`,
+  enforces a baseline arm + declared model/version + success-first), a `bench leaderboard` CI
+  workflow that validates submissions and renders the board, and a submission guide. First
+  finding: repomix's whole-repo packing costs +14% tokens at equal success on small tasks.
 - Generic `CommandAdapter` for `cram rig`: referee **any** context-packer that emits context on
   stdout, with no cram-specific integration. Ships key-free presets `repomix`
   (`npx -y repomix --stdout`) and `files-to-prompt`, so third-party optimizers can be compared

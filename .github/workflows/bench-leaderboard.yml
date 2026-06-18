@@ -1,0 +1,29 @@
+name: bench leaderboard
+
+# Validates submitted cram-bench result files and renders the leaderboard into
+# the run summary, so a "submit your optimizer's score" PR gets instant feedback.
+on:
+  pull_request:
+    paths:
+      - "examples/rig/bench/results/**"
+  workflow_dispatch:
+
+jobs:
+  leaderboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install cram-ai
+        run: python -m pip install -e .
+      - name: Validate result files
+        run: python scripts/validate_bench_result.py examples/rig/bench/results/*.json
+      - name: Render leaderboard
+        run: |
+          {
+            echo '## cram rig leaderboard'
+            echo
+            cram rig --leaderboard 'examples/rig/bench/results/*.json'
+          } >> "$GITHUB_STEP_SUMMARY"

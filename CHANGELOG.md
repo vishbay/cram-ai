@@ -6,14 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Reproducible referee benchmark (`examples/rig/bench/`): a self-contained, tiered corpus
+  (`cram-bench-v1`, small/medium/large) with fixtures that ship red — no external clone needed.
+- `cram rig` gains `--repeats N` (run each cell N times for variance), `--tier` (filter by
+  corpus tier), and `--leaderboard <glob>` (render a ranked markdown leaderboard from committed
+  result JSON). `summarize()` now reports `n_runs` and `eff_tokens_stdev` (additive).
+- Contributor scaffolding: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+  `CHANGELOG.md`, a pull-request template, and bug/feature issue templates.
+
 ### Changed
 - `CASE_STUDY.md`: reconciled the Codex cross-runner section — separated the orientation metric
   (reads before edit, flat on Codex) from the convergence metric (the N=1 −47.5% effective-token
   result), and rewrote the synthesis so it no longer reads as self-contradictory.
 
-### Added
-- Contributor scaffolding: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
-  `CHANGELOG.md`, a pull-request template, and bug/feature issue templates.
+### Fixed
+- `cram rig` no longer copies fixture `__pycache__`/`*.pyc` into run workdirs (stale bytecode
+  could shadow an agent's edit and corrupt the oracle).
 
 ## [0.8.1] — 2026-06-17
 ### Changed

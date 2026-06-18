@@ -177,6 +177,34 @@ def _cmd_label(tool: str | None, cmd: str | None, file_path: str | None) -> str:
     return tool or '(tool)'
 
 
+def estimate_read_tokens_from_counts(read_file_counts: dict, repo_root: str | None,
+                                     *, chars_per_token: int = 4) -> int:
+    """Estimate input tokens from the files a session read.
+
+    Cursor transcripts carry no token usage, so for those sessions every token
+    metric is blank. This turns the file paths a session read (with their read
+    counts) into an *estimate*: each read pulls the file's bytes into context, so
+    we sum file size on disk and divide by `chars_per_token`. Strictly an
+    estimate (the file on disk may differ from what was read at session time);
+    callers must label it `estimated`, never `measured`. Files outside the repo
+    or missing on disk are skipped.
+    """
+    if not read_file_counts:
+        return 0
+    sep = (repo_root.rstrip(os.sep) + os.sep) if repo_root else None
+    total = 0
+    for fp, count in read_file_counts.items():
+        ap = fp if os.path.isabs(fp) else os.path.join(repo_root or '', fp)
+        if sep and not (ap == repo_root or ap.startswith(sep)):
+            continue
+        try:
+            size = os.path.getsize(ap)
+        except OSError:
+            continue
+        total += (size // chars_per_token) * count
+    return total
+
+
 def _cursor_files_from_entry(entry: dict) -> list[str]:
     """Extract referenced file paths from a Cursor agent-transcript entry (deduplicated)."""
     seen: set[str] = set()

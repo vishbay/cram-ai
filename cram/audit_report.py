@@ -261,6 +261,12 @@ def render_report(data: dict, repo_root: str) -> str:
     row('Orientation cost / session',
         f'${data["orient_cost_per_session"]:.4f}',
         'estimated (assumed tokens/file model)')
+    if data.get('cursor_estimated'):
+        n = data.get('cursor_estimated_sessions', 0)
+        row('Estimated Cursor read tokens',
+            f'{data.get("est_cursor_read_tokens", 0):,.0f} tok '
+            f'({n} session{"s" if n != 1 else ""})',
+            'estimated (file size / chars-per-token)')
 
     # ── By source ─────────────────────────────────────────────────────────────
     projects = data.get('projects') or []

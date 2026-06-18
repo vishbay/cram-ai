@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Opt-in **Cursor token estimation**: `cram audit --estimate-cursor` (or
+  `CRAM_CURSOR_ESTIMATE=1`) estimates read-token cost for Cursor sessions from the sizes of
+  files they read, since Cursor transcripts carry no usage data. Always labelled `estimated`,
+  tunable via `CRAM_CHARS_PER_TOKEN` (default 4), and kept strictly out of the measured
+  aggregates. New pure helper `audit_events.estimate_read_tokens_from_counts`.
 - **GitHub Action** (`action.yml`) that posts a token-waste audit as a sticky PR comment and can
   gate a PR on the `cram rig` referee. Key-free; consumes committed/uploaded audit/rig JSON
   (transcripts never exist in CI). Modes: `compare`, `report`, `rig`. Backed by a new key-free

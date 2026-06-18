@@ -47,6 +47,11 @@ AUDIT_BASE_PRICE: float = float(os.environ.get(
 # carried (re-read) by every subsequent request in the session.
 # Override with: CRAM_AUDIT_BIG_RESULT_BYTES=20000
 BIG_RESULT_BYTES: int = int(os.environ.get('CRAM_AUDIT_BIG_RESULT_BYTES', '20000'))
+# Heuristic for the opt-in Cursor token estimate (Cursor carries no usage data).
+# Override with CRAM_CHARS_PER_TOKEN; default 4 matches cram's size//4 convention.
+CHARS_PER_TOKEN: int = int(os.environ.get('CRAM_CHARS_PER_TOKEN', '4'))
+# Default the --estimate-cursor flag from the environment.
+CURSOR_ESTIMATE_DEFAULT: bool = os.environ.get('CRAM_CURSOR_ESTIMATE', '') not in ('', '0', 'false')
 # A cold run ingesting more than this many transcripts announces itself on
 # stderr — otherwise a large first run reads as a hang.
 INGEST_PROGRESS_MIN: int = 50
@@ -324,7 +329,7 @@ def _segment_metrics(sessions: list[dict]) -> dict:
 
 
 def collect_audit(repo_root: str, days: int = 30, all_projects: bool = False,
-                  *, reingest: bool = False,
+                  *, reingest: bool = False, estimate_cursor: bool = False,
                   failures_out: list[str] | None = None) -> dict | None:
     """Analyse transcripts and return structured audit data, or None if none found.
 
@@ -339,7 +344,8 @@ def collect_audit(repo_root: str, days: int = 30, all_projects: bool = False,
     """
     store = audit_store.AuditStore.open()
     try:
-        return _collect_audit_inner(store, repo_root, days, all_projects, reingest)
+        return _collect_audit_inner(store, repo_root, days, all_projects, reingest,
+                                    estimate_cursor=estimate_cursor)
     finally:
         if failures_out is not None:
             failures_out.extend(store.run_failures)
@@ -429,11 +435,30 @@ def _gather_sessions(store, repo_root: str, days: int,
 
 
 def _collect_audit_inner(store, repo_root: str, days: int,
-                         all_projects: bool, reingest: bool) -> dict | None:
+                         all_projects: bool, reingest: bool,
+                         *, estimate_cursor: bool = False) -> dict | None:
     all_sessions, project_summaries = _gather_sessions(
         store, repo_root, days, all_projects, reingest)
     if not all_sessions:
         return None
+
+    # Opt-in Cursor token estimate. Cursor sessions carry no usage data, so this
+    # turns the files they read into an *estimate*, labelled estimated and kept
+    # strictly out of the measured aggregates below (which stay genuinely
+    # measured / zero for Cursor).
+    est_cursor_tokens = 0
+    cursor_est_sessions = 0
+    if estimate_cursor:
+        for s in all_sessions:
+            if s.get('source') != 'cursor':
+                continue
+            e = audit_events.estimate_read_tokens_from_counts(
+                s.get('read_file_counts') or {}, repo_root,
+                chars_per_token=CHARS_PER_TOKEN)
+            if e:
+                est_cursor_tokens += e
+                cursor_est_sessions += 1
+    cursor_estimated = cursor_est_sessions > 0
 
     total     = len(all_sessions)
     avg_reads = sum(s['reads'] for s in all_sessions) / total
@@ -611,6 +636,13 @@ def _collect_audit_inner(store, repo_root: str, days: int,
          'count_per_session': avg_edit_churn,
          'note': 'same-file re-edits — not dollar-costed'},
     ]
+    if cursor_estimated:
+        per = est_cursor_tokens / cursor_est_sessions
+        layer_costs.append({
+            'layer': 'cursor-reads', 'basis': 'estimated',
+            'eff_tokens_per_session': per,
+            'cost_per_session': per * AUDIT_BASE_PRICE,
+            'note': 'estimated Cursor read tokens (file size / chars-per-token)'})
     # Rank dollar-costed layers first (by $/session desc), count-only last.
     layer_costs.sort(key=lambda r: (r['basis'] == 'count',
                                     -(r.get('cost_per_session') or 0)))
@@ -652,6 +684,12 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'avg_edit_churn':            avg_edit_churn,
         'sessions_with_errors':      sessions_with_errors,
         'big_result_bytes':          BIG_RESULT_BYTES,
+        # Opt-in Cursor token estimate (estimated basis; 0/False when off or no
+        # Cursor sessions). Never folded into the measured aggregates above.
+        'cursor_estimated':          cursor_estimated,
+        'est_cursor_read_tokens':    est_cursor_tokens,
+        'cursor_estimated_sessions': cursor_est_sessions,
+        'chars_per_token':           CHARS_PER_TOKEN,
         # Measured orientation (new, additive; None when unmeasurable)
         'edit_sessions':                   len(edit_session_list),
         'read_only_sessions':              read_only_sessions,
@@ -690,12 +728,14 @@ def _collect_audit_inner(store, repo_root: str, days: int,
 
 
 def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
-              as_json: bool = False, reingest: bool = False) -> None:
+              as_json: bool = False, reingest: bool = False,
+              estimate_cursor: bool = False) -> None:
     """Print an orientation-tax audit for the repo (or all projects)."""
 
     failures: list[str] = []
     data = collect_audit(repo_root, days=days, all_projects=all_projects,
-                         reingest=reingest, failures_out=failures)
+                         reingest=reingest, estimate_cursor=estimate_cursor,
+                         failures_out=failures)
 
     if failures:
         n = len(failures)
@@ -870,11 +910,12 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
 
 
 def run_report(repo_root: str, days: int = 30, all_projects: bool = False,
-               out_path: str = '-', reingest: bool = False) -> None:
+               out_path: str = '-', reingest: bool = False,
+               estimate_cursor: bool = False) -> None:
     """Render the markdown report to stdout (out_path '-') or a file."""
     from cram.audit_report import render_report
     data = collect_audit(repo_root, days=days, all_projects=all_projects,
-                         reingest=reingest)
+                         reingest=reingest, estimate_cursor=estimate_cursor)
     if data is None:
         print(f"No sessions found in the last {days} days.")
         return
@@ -921,7 +962,8 @@ def _build_drilldowns(leaderboard: list[dict], repo_root: str, top: int = 3) -> 
 
 def run_report_html(repo_root: str, days: int = 30, all_projects: bool = False,
                     out_path: str | None = None, reingest: bool = False,
-                    open_browser: bool | None = None) -> None:
+                    open_browser: bool | None = None,
+                    estimate_cursor: bool = False) -> None:
     """Render the standalone HTML report to a file and (optionally) open it.
 
     Builds the same collect_audit() data as the markdown report, plus the
@@ -934,7 +976,8 @@ def run_report_html(repo_root: str, days: int = 30, all_projects: bool = False,
 
     store = audit_store.AuditStore.open()
     try:
-        data = _collect_audit_inner(store, repo_root, days, all_projects, reingest)
+        data = _collect_audit_inner(store, repo_root, days, all_projects, reingest,
+                                    estimate_cursor=estimate_cursor)
         if data is None:
             print(f"No sessions found in the last {days} days.")
             return
@@ -1322,6 +1365,11 @@ def main() -> None:
     parser.add_argument('--layer', default=None, choices=LAYERS,
                         help='Drill into one waste class and list its contributors')
     parser.add_argument('--path', default=None, metavar='REPO_PATH')
+    parser.add_argument('--estimate-cursor', action='store_true',
+                        default=CURSOR_ESTIMATE_DEFAULT, dest='estimate_cursor',
+                        help='estimate token cost for Cursor sessions from file '
+                             'sizes (clearly labelled estimated; Cursor carries '
+                             'no real usage data)')
     args = parser.parse_args()
 
     if args.session:
@@ -1345,16 +1393,19 @@ def main() -> None:
     if args.report_html is not None:
         run_report_html(root, days=args.days, all_projects=args.all_projects,
                         out_path=args.report_html or None, reingest=args.reingest,
-                        open_browser=False if args.no_open else None)
+                        open_browser=False if args.no_open else None,
+                        estimate_cursor=args.estimate_cursor)
         return
 
     if args.report is not None:
         run_report(root, days=args.days, all_projects=args.all_projects,
-                   out_path=args.report, reingest=args.reingest)
+                   out_path=args.report, reingest=args.reingest,
+                   estimate_cursor=args.estimate_cursor)
         return
 
     run_audit(root, days=args.days, all_projects=args.all_projects,
-              as_json=args.as_json, reingest=args.reingest)
+              as_json=args.as_json, reingest=args.reingest,
+              estimate_cursor=args.estimate_cursor)
 
 
 if __name__ == '__main__':

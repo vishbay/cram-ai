@@ -84,7 +84,12 @@ Supported transcript sources today:
 |---|---:|---:|
 | Claude Code | yes | measured |
 | Codex | yes | measured when token usage is present |
-| Cursor | yes | usually unmeasured; Cursor transcripts do not carry token usage |
+| Cursor | yes | no real usage in the transcript; opt-in `--estimate-cursor` adds a clearly-labelled *estimate* from file sizes |
+
+Cursor transcripts carry no token counts, so by default its token metrics show `—`. Pass
+`cram audit --estimate-cursor` (or set `CRAM_CURSOR_ESTIMATE=1`) to estimate read-token cost
+from the sizes of files each session read. It is always labelled **estimated**, tunable via
+`CRAM_CHARS_PER_TOKEN` (default 4), and never mixed into the measured aggregates.
 
 **2. Turns numbers into fixes**
 

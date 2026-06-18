@@ -172,18 +172,35 @@ class CramAdapter:
             return False
 
     def setup(self, task: Task, workdir: str) -> dict:
+        from cram.context_dir import has_context_dir
+
+        # Bootstrap the context layer if the repo isn't already cram-initialized
+        # (e.g. a fresh benchmark fixture). Without this `cram task` has no
+        # .ai-context to populate and cram silently degrades to baseline — so
+        # cram could never actually compete on the benchmark.
+        initialized = has_context_dir(workdir)
+        if not initialized:
+            try:
+                init = subprocess.run(['cram', 'init'], cwd=workdir,
+                                      capture_output=True, timeout=300)
+                initialized = init.returncode == 0
+            except Exception:
+                initialized = False
+
         cmd = ['cram', 'task', task.prompt]
         if self.target:
             cmd.extend(['--target', self.target])
         fallback = False
         try:
             result = subprocess.run(cmd, cwd=workdir,
-                                    capture_output=True, timeout=120)
+                                    capture_output=True, timeout=180)
             if result.returncode != 0:
                 fallback = self._write_existing_context(workdir)
         except Exception:
             fallback = self._write_existing_context(workdir)
         setup = {'CRAM_REPO': workdir}
+        if initialized:
+            setup['CRAM_INITIALIZED'] = '1'
         if fallback:
             setup['CRAM_CONTEXT_FALLBACK'] = 'existing'
         return setup
@@ -718,11 +735,20 @@ _FIXTURE_IGNORE = shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache'
 
 
 def _prepare_workdir(task: Task, wd: str) -> str:
-    """Create one run's working directory at `wd` from the task fixture."""
+    """Create one run's working directory at `wd` from the task fixture.
+
+    The workdir is `git init`'d so it's a real repo: cram (find_git_root) and
+    many agents expect a git root, and all arms get the same realistic
+    environment. Best-effort — a missing git just leaves a plain directory.
+    """
     if task.fixture:
         shutil.copytree(task.fixture, wd, ignore=_FIXTURE_IGNORE)
     else:
         os.makedirs(wd, exist_ok=True)
+    try:
+        subprocess.run(['git', 'init', '-q'], cwd=wd, capture_output=True, timeout=30)
+    except Exception:
+        pass
     return wd
 
 

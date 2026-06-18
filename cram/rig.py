@@ -746,7 +746,11 @@ def run_rig(corpus: list[Task], providers: list[ProviderAdapter],
                                          reason=av.reason))
                 continue
             for rep in range(repeats):
-                leaf = task.id if repeats == 1 else f'{task.id}#{rep}'
+                # Keep the leaf to [A-Za-z0-9-] (+ '/'): Claude Code dashes any
+                # other char (e.g. '#') when naming its transcript dir, but
+                # cram's resolver only dashes '/', so a '#rep' suffix made the
+                # transcript unfindable and every repeat measured 0 tokens.
+                leaf = task.id if repeats == 1 else f'{task.id}-rep{rep}'
                 wd = _prepare_workdir(task, os.path.join(work_root, prov.name, leaf))
                 try:
                     setup = prov.setup(task, wd)

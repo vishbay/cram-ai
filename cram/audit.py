@@ -994,6 +994,27 @@ _COMPARE_ROWS = [
 ]
 
 
+def compare_rows(data_a: dict, data_b: dict) -> list[dict]:
+    """Per-metric A/B comparison rows, shared by the stdout table and the CI
+    PR-comment renderer (cram.ci). Each row carries raw values plus
+    preformatted strings so both renderers agree on formatting and the Δ sign.
+    """
+    rows: list[dict] = []
+    for label, key, fmt in _COMPARE_ROWS:
+        va, vb = data_a.get(key), data_b.get(key)
+        if va is None or vb is None:
+            rows.append({'label': label, 'key': key, 'a': va, 'b': vb,
+                         'a_str': '—', 'b_str': '—', 'delta_str': '—', 'pct': '—'})
+            continue
+        delta = vb - va
+        pct = f'{delta / va * 100:+.0f}%' if va else '—'
+        delta_str = fmt.format(delta) if delta >= 0 else '-' + fmt.format(-delta)
+        rows.append({'label': label, 'key': key, 'a': va, 'b': vb,
+                     'a_str': fmt.format(va), 'b_str': fmt.format(vb),
+                     'delta_str': delta_str, 'pct': pct})
+    return rows
+
+
 def run_compare(path_a: str, path_b: str, days: int = 30,
                 as_json: bool = False, reingest: bool = False) -> None:
     """Side-by-side audit of two checkouts — the P0 attribution experiment view.
@@ -1024,15 +1045,9 @@ def run_compare(path_a: str, path_b: str, days: int = 30,
     print(f"\nAudit comparison — last {days} days  (Δ = B − A)\n")
     print(f"  {'Metric':<28} {name_a:>18} {name_b:>18} {'Δ':>12} {'Δ%':>8}")
     print(f"  {'-' * 28} {'-' * 18} {'-' * 18} {'-' * 12} {'-' * 8}")
-    for label, key, fmt in _COMPARE_ROWS:
-        va, vb = data_a[key], data_b[key]
-        if va is None or vb is None:
-            print(f"  {label:<28} {'—':>18} {'—':>18} {'—':>12} {'—':>8}")
-            continue
-        delta = vb - va
-        pct = f'{delta / va * 100:+.0f}%' if va else '—'
-        print(f"  {label:<28} {fmt.format(va):>18} {fmt.format(vb):>18} "
-              f"{fmt.format(delta) if delta >= 0 else '-' + fmt.format(-delta):>12} {pct:>8}")
+    for row in compare_rows(data_a, data_b):
+        print(f"  {row['label']:<28} {row['a_str']:>18} {row['b_str']:>18} "
+              f"{row['delta_str']:>12} {row['pct']:>8}")
     print()
     print("  ← primary metric. Negative Δ on reads-before-first-edit means B")
     print("    (second path) oriented faster. Compare distributions, not just")

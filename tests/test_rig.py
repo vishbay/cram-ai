@@ -7,6 +7,7 @@ tokens-at-fixed-success summary."""
 
 from __future__ import annotations
 import json
+import os
 
 import pytest
 
@@ -114,6 +115,44 @@ class TestProviders:
                             lambda self, workdir: True)
         setup = rig.CramAdapter(target='codex').setup(rig.Task('a', 'do it'), str(tmp_path))
         assert setup['CRAM_CONTEXT_FALLBACK'] == 'existing'
+
+    def test_cram_setup_runs_init_when_uninitialized(self, tmp_path, monkeypatch):
+        import cram.context_dir as _cd
+        calls = []
+
+        def fake_run(argv, **kw):
+            calls.append(argv)
+
+            class Result:
+                returncode = 0
+            return Result()
+        monkeypatch.setattr(_cd, 'has_context_dir', lambda p: False)
+        monkeypatch.setattr(rig.subprocess, 'run', fake_run)
+        setup = rig.CramAdapter().setup(rig.Task('a', 'do it'), str(tmp_path))
+        assert ['cram', 'init'] in calls          # bootstrapped the context layer
+        assert setup.get('CRAM_INITIALIZED') == '1'
+
+    def test_cram_setup_skips_init_when_already_initialized(self, tmp_path, monkeypatch):
+        import cram.context_dir as _cd
+        calls = []
+
+        def fake_run(argv, **kw):
+            calls.append(argv)
+
+            class Result:
+                returncode = 0
+            return Result()
+        monkeypatch.setattr(_cd, 'has_context_dir', lambda p: True)
+        monkeypatch.setattr(rig.subprocess, 'run', fake_run)
+        rig.CramAdapter().setup(rig.Task('a', 'do it'), str(tmp_path))
+        assert ['cram', 'init'] not in calls      # already initialized → no re-init
+
+    def test_prepare_workdir_git_inits(self, tmp_path):
+        fx = tmp_path / 'fx'
+        fx.mkdir()
+        (fx / 'a.py').write_text('x = 1\n')
+        wd = rig._prepare_workdir(rig.Task('t', 'p', fixture=str(fx)), str(tmp_path / 'wd'))
+        assert os.path.isdir(os.path.join(wd, '.git'))
 
 
 # ── Oracle ──────────────────────────────────────────────────────────────────

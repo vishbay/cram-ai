@@ -112,16 +112,49 @@ jobs:
 """
 
 
+# A starter workflow that comments a cram audit comparison on every PR using the
+# published `cram audit` action. It expects the two audit JSONs to be committed
+# (transcripts never exist in CI), so it's a template teams adapt — see the
+# action's README for how to produce baseline.json / candidate.json.
+_AUDIT_PR_WORKFLOW = """\
+name: cram audit
+
+on:
+  pull_request:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      # Adapt: point file-a/file-b at committed `cram audit --json` outputs, or
+      # switch mode to `rig` with baseline/candidate `cram rig --json` results.
+      - uses: vishbay/cram-ai@v1
+        with:
+          mode: compare
+          file-a: .cram/baseline.json
+          file-b: .cram/candidate.json
+"""
+
+
+def _write_workflow(workflows_dir: str, name: str, content: str) -> None:
+    dest = os.path.join(workflows_dir, name)
+    if os.path.exists(dest):
+        print(f"  .github/workflows/{name} already exists — skipping.")
+        return
+    with open(dest, 'w') as f:
+        f.write(content)
+    print(f"  .github/workflows/{name}")
+
+
 def write_ci_action(repo_root: str) -> None:
     workflows_dir = os.path.join(repo_root, '.github', 'workflows')
     os.makedirs(workflows_dir, exist_ok=True)
-    dest = os.path.join(workflows_dir, 'cram-sync.yml')
-    if os.path.exists(dest):
-        print(f"  .github/workflows/cram-sync.yml already exists — skipping.")
-        return
-    with open(dest, 'w') as f:
-        f.write(_CI_WORKFLOW)
-    print(f"  .github/workflows/cram-sync.yml")
+    _write_workflow(workflows_dir, 'cram-sync.yml', _CI_WORKFLOW)
+    _write_workflow(workflows_dir, 'cram-audit.yml', _AUDIT_PR_WORKFLOW)
 
 
 DECISIONS_TEMPLATE = """\

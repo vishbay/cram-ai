@@ -511,10 +511,17 @@ oracle.
 
 ```bash
 cram rig <corpus.json> --providers baseline,cram,claude-context
+cram rig <corpus.json> --repeats 3 --tier small   # N runs/cell, one tier
 cram rig <corpus.json> --dry-run
 cram rig <corpus.json> --runner codex
 cram rig --observe cram --days 30
+cram rig --leaderboard 'examples/rig/bench/results/*.json'
 ```
+
+A self-contained, tiered benchmark ships in [`examples/rig/bench/`](examples/rig/bench) —
+`cram-bench-v1`, small/medium/large tasks that ship red, no external repo to clone. Run it,
+commit the result JSON, and render a ranked leaderboard with `--leaderboard`. `--repeats N`
+runs each cell N times so the summary reports variance.
 
 Modes:
 
@@ -541,6 +548,44 @@ Runners (controlled mode — pick with `--runner`):
 
 Both reuse the existing CLI login (no API key). More agent runners can be added behind the same
 corpus/oracle interface.
+
+---
+
+## Continuous integration (GitHub Action)
+
+cram ships a GitHub Action that turns an audit into a **sticky pull-request comment** and can
+**gate** a PR on the rig referee. Because agent transcripts never exist in a stock CI runner,
+the action consumes committed/uploaded JSON (produced by `cram audit --json` /
+`cram audit --compare A B --json` / `cram rig --json`) rather than live transcripts.
+
+```yaml
+# .github/workflows/cram-audit.yml
+name: cram audit
+on: pull_request
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vishbay/cram-ai@v1
+        with:
+          mode: compare              # compare | report | rig
+          file-a: .cram/baseline.json
+          file-b: .cram/candidate.json
+```
+
+| Mode | Input | Effect |
+|---|---|---|
+| `compare` | two audit JSONs | posts a token-waste delta table |
+| `report` | one `cram audit --json` | posts the markdown audit report |
+| `rig` | baseline + candidate `cram rig --json` | **fails the check** if candidate success drops more than `tolerance` |
+
+`cram init --team` drops a starter `cram-audit.yml` (and `cram-sync.yml`) into
+`.github/workflows/`. On fork PRs where commenting is blocked, the action falls back to the job
+summary. The action is key-free.
 
 ---
 

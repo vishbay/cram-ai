@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **GitHub Action** (`action.yml`) that posts a token-waste audit as a sticky PR comment and can
+  gate a PR on the `cram rig` referee. Key-free; consumes committed/uploaded audit/rig JSON
+  (transcripts never exist in CI). Modes: `compare`, `report`, `rig`. Backed by a new key-free
+  `cram/ci.py` engine (`render_compare_comment`, `render_report_comment`, `evaluate_rig_gate`,
+  `python -m cram.ci`). `cram init --team` now also drops a starter `cram-audit.yml`.
 - Reproducible referee benchmark (`examples/rig/bench/`): a self-contained, tiered corpus
   (`cram-bench-v1`, small/medium/large) with fixtures that ship red — no external clone needed.
 - `cram rig` gains `--repeats N` (run each cell N times for variance), `--tier` (filter by

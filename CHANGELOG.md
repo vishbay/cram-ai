@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- `cram rig --runner claude` (`LiveRunner`) now passes `--dangerously-skip-permissions`, so a
+  headless run can actually edit files and run the oracle. Without it `claude -p` made no changes
+  and every arm failed with zero work — the controlled benchmark only ever ran via `MockRunner`.
+  Safe because rig runs in throwaway per-task workdirs.
+
+### Added
+- Generic `CommandAdapter` for `cram rig`: referee **any** context-packer that emits context on
+  stdout, with no cram-specific integration. Ships key-free presets `repomix`
+  (`npx -y repomix --stdout`) and `files-to-prompt`, so third-party optimizers can be compared
+  without API keys or heavy setup.
+
 ### Changed
 - `CASE_STUDY.md`: added a 0.8.1 re-run pilot (issue #3571, baseline, N=3, `claude-opus-4-8`)
   validating the profiler pipeline end-to-end; raw results committed under

@@ -260,7 +260,9 @@ class TestLiveRunner:
                             lambda wd: str(tmp_path / 't.jsonl'))
         out = rig.LiveRunner().run(rig.Task('a', 'do the thing'), {}, str(tmp_path))
         assert out == str(tmp_path / 't.jsonl')
-        assert calls['argv'] == ['claude', '-p', 'do the thing']
+        # --dangerously-skip-permissions is required for headless edits/oracle.
+        assert calls['argv'] == ['claude', '-p', '--dangerously-skip-permissions',
+                                 'do the thing']
         assert calls['cwd'] == str(tmp_path)
 
     def test_custom_agent_cmd(self, monkeypatch, tmp_path):

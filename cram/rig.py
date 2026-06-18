@@ -285,12 +285,79 @@ class ClaudeContextAdapter:
         return {}
 
 
+# Which startup file each runner reads context from, when an optimizer pre-packs
+# context into the repo (CommandAdapter). Other targets need no special handling.
+_RUNNER_STARTUP_FILE = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md'}
+
+
+class CommandAdapter:
+    """Generic optimizer: run a command that emits repo context on stdout, then
+    write that into the agent's startup file before the run.
+
+    This lets any context-packer be refereed with no cram-specific integration —
+    e.g. repomix (`npx -y repomix --stdout`) or files-to-prompt. setup() is
+    best-effort: if the tool is missing or fails, the arm degrades to baseline
+    (no context written) rather than crashing the run, so a broken optimizer
+    shows up as "no savings", not a benchmark hole.
+    """
+
+    def __init__(self, name: str, command, *, target: str = 'claude',
+                 header: str | None = None):
+        self.name = name
+        self.command = command if isinstance(command, list) else command.split()
+        self.target = target
+        self.header = header
+
+    @property
+    def launcher(self) -> str:
+        return self.command[0]
+
+    def availability(self) -> Availability:
+        if shutil.which(self.launcher) is None:
+            return Availability(False, f'{self.launcher} not on PATH — needed to '
+                                       f'run the {self.name} optimizer')
+        return Availability(True)
+
+    def setup(self, task: Task, workdir: str) -> dict:
+        try:
+            result = subprocess.run(self.command, cwd=workdir, capture_output=True,
+                                    text=True, timeout=300)
+        except Exception:
+            return {}                      # degrade to baseline
+        context = (result.stdout or '').strip()
+        if result.returncode != 0 or not context:
+            return {}
+        startup = _RUNNER_STARTUP_FILE.get(self.target, 'CLAUDE.md')
+        body = f'{self.header}\n\n{context}\n' if self.header else context + '\n'
+        try:
+            path = os.path.join(workdir, startup)
+            with open(path, 'a' if os.path.exists(path) else 'w') as f:
+                f.write(('\n' if os.path.exists(path) else '') + body)
+        except OSError:
+            return {}
+        return {'CRAM_OPTIMIZER': self.name}
+
+
+# Presets for low-setup, key-free third-party optimizers (require only their CLI
+# / npx; no API keys). Construct via get_provider('repomix') etc.
+def _repomix() -> CommandAdapter:
+    return CommandAdapter('repomix', 'npx -y repomix --stdout',
+                          header='# Repo context (packed by repomix)')
+
+
+def _files_to_prompt() -> CommandAdapter:
+    return CommandAdapter('files-to-prompt', 'files-to-prompt .',
+                          header='# Repo context (files-to-prompt)')
+
+
 _BUILTIN_PROVIDERS: dict[str, Callable[[], ProviderAdapter]] = {
-    'baseline':       BaselineAdapter,
-    'cram':           CramAdapter,
-    'headroom':       HeadroomAdapter,
-    'context-mode':   ContextModeAdapter,
-    'claude-context': ClaudeContextAdapter,
+    'baseline':        BaselineAdapter,
+    'cram':            CramAdapter,
+    'headroom':        HeadroomAdapter,
+    'context-mode':    ContextModeAdapter,
+    'claude-context':  ClaudeContextAdapter,
+    'repomix':         _repomix,
+    'files-to-prompt': _files_to_prompt,
 }
 
 
@@ -367,8 +434,14 @@ class LiveRunner:
     the `claude` CLI on PATH; available() reports it. Pass a different
     agent_cmd to drive another headless agent.
     """
-    def __init__(self, agent_cmd: tuple[str, ...] = ('claude', '-p'),
+    def __init__(self, agent_cmd: tuple[str, ...] = (
+                     'claude', '-p', '--dangerously-skip-permissions'),
                  timeout: int = 900):
+        # --dangerously-skip-permissions is required for a headless run to
+        # actually edit files / run the oracle command: without it `claude -p`
+        # makes no changes and every arm fails with zero work. The rig runs in
+        # throwaway per-task workdirs (copied fixtures), so granting autonomy
+        # there is safe — the agent can't touch anything outside the copy.
         self.agent_cmd = tuple(agent_cmd)
         self.timeout = timeout
 
@@ -838,6 +911,8 @@ def _configure_providers_for_runner(
     for provider in providers:
         if isinstance(provider, CramAdapter) and runner_name == 'codex':
             provider.target = 'codex'
+        elif isinstance(provider, CommandAdapter):
+            provider.target = runner_name
     return providers
 
 

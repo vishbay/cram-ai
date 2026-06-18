@@ -1,0 +1,56 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. For security issues, do **not** use this form — see SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: Running `cram audit` on a Codex session shows ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: cram-version
+    attributes:
+      label: cram version
+      description: Output of `cram --version`.
+      placeholder: cram-ai 0.8.1
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Which agent's transcripts?
+      options:
+        - Claude Code
+        - Codex
+        - Cursor
+        - Not transcript-related
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS + Python version
+      placeholder: macOS 15 / Python 3.12
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output / traceback
+      render: shell

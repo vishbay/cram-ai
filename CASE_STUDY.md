@@ -132,41 +132,26 @@ the dominant waste. **Net neutral-to-negative.**
 ## Cross-runner check (Codex) — N=1 per cell, directional only
 
 Same fixtures, run through Codex CLI instead of `claude -p`. Codex reads are shell-based, so
-there is no `core.py` re-read attribution; compare orientation + context only.
+there is no `core.py` re-read attribution; compare orientation (reads before edit) and total
+context, plus — where token usage was captured — effective tokens and request count.
 
-| Cell | Reads before edit (base→cram) | Peak ctx (base→cram) | Verdict |
+| Cell | Reads before edit (base→cram) | Peak ctx (base→cram) | Orientation verdict |
 |---|---|---|---|
 | #3571 localized | 6 → **8** | 50,785 → **56,481** | no benefit |
-| #2786 explicit | 33 → **39** | 150,990 → 128,030 | mixed |
-| #2786 natural | 26 → 28 | 146,227 → 138,722 | mixed |
+| #2786 explicit | 33 → **39** | 150,990 → 128,030 | no benefit |
+| #2786 natural | 26 → 28 | 146,227 → 138,722 | no benefit (flat) |
 | pilot natural | 31 → **38** | 166,499 → 164,627 | no benefit |
 
-On Codex the context layer never improved orientation (often slightly worse); the only
-consistent effect is lower total context, which did not convert into fewer reads or turns.
+On the **orientation metric (reads before edit)** Codex never improved — every cell is flat or
+slightly worse. Total context was usually lower, but on its own that did not convert into fewer
+reads.
 
----
+### One exception, on a *different* metric: #2786 natural prompt (N=1)
 
-## What the evidence says
-
-Across ~6 before/after cells (two runners, two issues, prompt variants), **exactly one is a
-clean win** (claude `-p` #3571, a localized bug whose file cram could name). #2786 (central
-hub) is neutral-to-negative on claude; Codex shows no orientation benefit on any cell. So the
-**auto-orientation / excerpt** value of the context layer is **not supported** by these
-results — it helps mainly when the target file is localized and nameable, and even then only
-on one runner here.
-
-**Important scope limit:** every cell exercised the *auto-generated* half
-(`ARCHITECTURE`/`SYMBOLS`/excerpts) with `DECISIONS.md`/`GOTCHAS.md` **empty**. The
-human-curated tacit-knowledge half (facts an agent cannot grep) was **not tested**, so it is
-neither supported nor refuted here. The honest conclusion: lead with the **audit + referee**;
-treat the context layer as optional, and as unproven for auto-orientation specifically.
-
-### Issue #2786 · Codex · natural prompt · N=1 per arm · equal success
-
-To test the workflow-fit hypothesis above, the Codex arm used a more natural
-issue prompt: it described the shared-option/callback bug but did not name
-`core.py` or the exact regression test. The hidden oracle still checked the
-focused regression test with `PYTHONPATH=src`.
+The #2786 *natural-prompt* cell is the single case where total convergence — not orientation —
+moved. The prompt described the shared-option/callback bug but did **not** name `core.py` or
+the regression test; the hidden oracle still checked the focused test with `PYTHONPATH=src`.
+Measured by **effective tokens and request count** (rather than reads-before-edit):
 
 | Arm | Success | Effective tokens | Requests | Peak ctx |
 |---|---:|---:|---:|---:|
@@ -174,11 +159,32 @@ focused regression test with `PYTHONPATH=src`.
 | cram context in `AGENTS.md` | 1/1 | 1,304,527 | 24 | 138,722 |
 | **Δ** | unchanged | **−47.5%** | **−43%** | **−5%** |
 
-**Read:** cram helped when the prompt left real orientation work to the agent.
-Both arms passed, but the cram arm converged in fewer requests, with fewer edits
-and no tool errors. This contrasts with over-specified Codex prompts that named
-the exact file/test: those also passed, but cram was slightly more expensive
-because the extra context overhead outweighed navigation savings.
+**Read (with caveats):** the two metrics *disagree* on this one run. Reads-before-edit barely
+moved (26→28, the row above), yet the cram arm converged in far fewer requests and effective
+tokens. So this is a *convergence* signal, not an *orientation* signal, and it is **N=1, one
+prompt, one runner** — directional only, **not** robust, and **not** corroborated by the
+orientation metric the rest of this study leads with. Over-specified Codex prompts that named
+the exact file/test also passed, but cram was slightly more expensive there (extra context
+overhead outweighed navigation savings).
+
+---
+
+## What the evidence says
+
+Across the before/after cells (two runners, two issues, prompt variants), **exactly one is a
+clean orientation win** (claude `-p` #3571, a localized bug whose file cram could name). #2786
+(central hub) is neutral-to-negative on claude. On Codex, **no cell improved orientation (reads
+before edit)**; a single natural-prompt cell showed a large effective-token / request reduction
+(−47.5% / −43%), but at **N=1**, unreplicated, and not reflected in the orientation metric. So
+the **auto-orientation / excerpt** value of the context layer is **not supported** as a robust
+result by these data — it helps mainly when the target file is localized and nameable, and even
+then only on one runner here; the lone Codex token reduction is suggestive but stands alone.
+
+**Important scope limit:** every cell exercised the *auto-generated* half
+(`ARCHITECTURE`/`SYMBOLS`/excerpts) with `DECISIONS.md`/`GOTCHAS.md` **empty**. The
+human-curated tacit-knowledge half (facts an agent cannot grep) was **not tested**, so it is
+neither supported nor refuted here. The honest conclusion: lead with the **audit + referee**;
+treat the context layer as optional, and as unproven for auto-orientation specifically.
 
 ---
 
@@ -187,6 +193,8 @@ because the extra context overhead outweighed navigation savings.
 - [x] Framed as a case study, not validation/proof
 - [x] Single-session numbers are descriptive, not causal
 - [x] N=3 (#3571); spread shown, weak/truncated runs disclosed not hidden
+- [x] Codex cross-runner cells are N=1, directional only; the one token reduction is unreplicated
+- [x] Metric disagreement disclosed (Codex #2786-natural: flat orientation, lower convergence)
 - [x] Before/after compared at equal task success (light "fix lands + tests pass" oracle)
 - [x] Upfront cost of the context layer shown, not hidden
 - [ ] Caveat: one repo, small N — does not generalize

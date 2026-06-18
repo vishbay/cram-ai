@@ -86,6 +86,25 @@ def test_repeats_runs_each_cell_n_times_without_collision(tmp_path):
     assert {r.rep for r in results} == {0, 1, 2}
 
 
+def test_repeat_workdirs_have_no_special_chars(tmp_path):
+    """Repeat workdir names must stay [A-Za-z0-9/_.-] so the transcript-dir
+    resolver (which only dashes '/') agrees with Claude Code (which dashes any
+    other char too). A '#' suffix here made every repeat measure 0 tokens."""
+    import re
+    seen = []
+
+    def run(task, setup, workdir):
+        seen.append(workdir)
+        return None
+    corpus = [t for t in rig.load_corpus(BENCH) if t.id == 'fix-failing-test']
+    rig.run_rig(corpus, [rig.BaselineAdapter()], rig.MockRunner(run),
+                rig.CommandOracle(), work_root=str(tmp_path), repeats=3)
+    assert len(seen) == 3
+    for wd in seen:
+        assert re.fullmatch(r'[A-Za-z0-9/_.\-]+', wd), wd
+        assert '#' not in wd
+
+
 def test_summarize_reports_n_runs_and_stdev(tmp_path):
     corpus = [t for t in rig.load_corpus(BENCH) if t.id == 'fix-failing-test']
     summary = rig.summarize(rig.run_rig(corpus, [rig.BaselineAdapter()],

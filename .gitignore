@@ -18,3 +18,8 @@ venv/
 
 # Generated audit reports
 cram-audit-report.html
+
+# rig fixture bytecode (must not be copied into runs)
+examples/rig/**/__pycache__/
+examples/rig/**/*.pyc
+examples/rig/**/.pytest_cache/

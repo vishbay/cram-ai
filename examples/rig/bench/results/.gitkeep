@@ -1,0 +1,2 @@
+# Committed rig result JSON files go here.
+# Render: cram rig --leaderboard "examples/rig/bench/results/*.json"

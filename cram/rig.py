@@ -35,6 +35,7 @@ import glob
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import time
@@ -59,6 +60,7 @@ class Task:
     prompt: str
     fixture: str | None = None
     check: list[str] = dataclasses.field(default_factory=list)
+    tier: str | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> 'Task':
@@ -67,8 +69,10 @@ class Task:
         check = d.get('check') or []
         if isinstance(check, str):
             check = check.split()
+        tier = d.get('tier')
         return cls(id=str(d['id']), prompt=str(d['prompt']),
-                   fixture=d.get('fixture'), check=list(check))
+                   fixture=d.get('fixture'), check=list(check),
+                   tier=str(tier) if tier is not None else None)
 
 
 def load_corpus(path: str) -> list[Task]:
@@ -631,12 +635,19 @@ class RunResult:
     eff_tokens: float = 0.0
     skipped: bool = False
     reason: str = ''
+    rep: int = 0
 
 
-def _prepare_workdir(task: Task, root: str) -> str:
-    wd = os.path.join(root, task.id)
+# Copytree must never carry stale bytecode into a run — a fixture's committed
+# __pycache__ could shadow the agent's edit and make the oracle pass/fail on
+# the wrong code.
+_FIXTURE_IGNORE = shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache')
+
+
+def _prepare_workdir(task: Task, wd: str) -> str:
+    """Create one run's working directory at `wd` from the task fixture."""
     if task.fixture:
-        shutil.copytree(task.fixture, wd)
+        shutil.copytree(task.fixture, wd, ignore=_FIXTURE_IGNORE)
     else:
         os.makedirs(wd, exist_ok=True)
     return wd
@@ -644,11 +655,14 @@ def _prepare_workdir(task: Task, root: str) -> str:
 
 def run_rig(corpus: list[Task], providers: list[ProviderAdapter],
             runner: Runner, oracle: Oracle, *, work_root: str,
-            measure: Callable[[str], float] = effective_tokens) -> list[RunResult]:
-    """Run every (task × provider) and return one RunResult each.
+            measure: Callable[[str], float] = effective_tokens,
+            repeats: int = 1) -> list[RunResult]:
+    """Run every (task × provider), `repeats` times each, and return RunResults.
 
-    Unavailable providers are recorded as skipped (with the availability reason)
-    rather than dropped, so the grid in the report is always complete.
+    Unavailable providers are recorded once as skipped (with the availability
+    reason) rather than dropped, so the grid in the report is always complete.
+    `repeats > 1` runs each cell N times in isolated workdirs so `summarize`
+    can report variance across runs.
     """
     results: list[RunResult] = []
     for task in corpus:
@@ -658,17 +672,19 @@ def run_rig(corpus: list[Task], providers: list[ProviderAdapter],
                 results.append(RunResult(task.id, prov.name, skipped=True,
                                          reason=av.reason))
                 continue
-            wd = _prepare_workdir(task, os.path.join(work_root, prov.name))
-            try:
-                setup = prov.setup(task, wd)
-                transcript = runner.run(task, setup, wd)
-                success = oracle.score(task, wd)
-                eff = measure(transcript) if transcript else 0.0
-                results.append(RunResult(task.id, prov.name, success=success,
-                                         eff_tokens=eff))
-            except Exception as e:  # a provider/runner failure is a data point
-                results.append(RunResult(task.id, prov.name, skipped=True,
-                                         reason=f'run error: {e}'))
+            for rep in range(repeats):
+                leaf = task.id if repeats == 1 else f'{task.id}#{rep}'
+                wd = _prepare_workdir(task, os.path.join(work_root, prov.name, leaf))
+                try:
+                    setup = prov.setup(task, wd)
+                    transcript = runner.run(task, setup, wd)
+                    success = oracle.score(task, wd)
+                    eff = measure(transcript) if transcript else 0.0
+                    results.append(RunResult(task.id, prov.name, success=success,
+                                             eff_tokens=eff, rep=rep))
+                except Exception as e:  # a provider/runner failure is a data point
+                    results.append(RunResult(task.id, prov.name, skipped=True,
+                                             reason=f'run error: {e}', rep=rep))
     return results
 
 
@@ -689,14 +705,17 @@ def summarize(results: list[RunResult]) -> dict:
     for prov, rs in by_provider.items():
         ran = [r for r in rs if not r.skipped]
         passed = [r for r in ran if r.success]
+        toks = [r.eff_tokens for r in passed]
         out[prov] = {
             'tasks':         len(rs),
             'ran':           len(ran),
             'skipped':       len(rs) - len(ran),
             'passed':        len(passed),
             'success_rate':  (len(passed) / len(ran)) if ran else None,
-            'mean_eff_tokens_passed': (sum(r.eff_tokens for r in passed) / len(passed))
-                                      if passed else None,
+            'mean_eff_tokens_passed': (sum(toks) / len(toks)) if toks else None,
+            # Variance across passed runs — meaningful only when repeats > 1.
+            'n_runs':        len(passed),
+            'eff_tokens_stdev': statistics.pstdev(toks) if len(toks) > 1 else 0.0,
             'skip_reason':   next((r.reason for r in rs if r.skipped), ''),
         }
     return {'providers': out, 'results': [dataclasses.asdict(r) for r in results]}
@@ -734,6 +753,72 @@ def render_summary(summary: dict, *, baseline: str = 'baseline') -> str:
                  'providers that actually ran.')
     lines.append('')
     return '\n'.join(lines)
+
+
+def _load_result(path: str) -> dict:
+    """Load a committed rig result file.
+
+    Accepts either a raw `summarize()` output ({providers, results}) or a
+    wrapped {meta, summary} document. Returns {meta, summary}.
+    """
+    with open(path) as f:
+        doc = json.load(f)
+    if 'summary' in doc and 'providers' not in doc:
+        return {'meta': doc.get('meta', {}), 'summary': doc['summary']}
+    return {'meta': doc.get('meta', {}), 'summary': doc}
+
+
+def render_leaderboard(result_files: list[str], *, baseline: str = 'baseline') -> str:
+    """Markdown leaderboard across committed rig result files.
+
+    Each file contributes one row per provider. Rows are ranked by
+    tokens-at-fixed-success: highest success rate first, then cheapest effective
+    tokens — so a provider is never credited for a low token count it only
+    achieved by failing the task. `vs base` is computed against the baseline
+    provider *within the same file* (cross-machine token counts aren't
+    comparable in absolute terms; only the within-run delta is).
+    """
+    rows: list[dict] = []
+    for path in result_files:
+        doc = _load_result(path)
+        meta = doc['meta']
+        provs = doc['summary'].get('providers', {})
+        base_tok = provs.get(baseline, {}).get('mean_eff_tokens_passed')
+        label = meta.get('model') or meta.get('name') or os.path.basename(path)
+        for name, s in provs.items():
+            if not s.get('ran'):
+                continue
+            tok = s.get('mean_eff_tokens_passed')
+            vs = ((tok - base_tok) / base_tok) if (tok is not None and base_tok) else None
+            rows.append({
+                'provider': name, 'label': label,
+                'success': s.get('success_rate'),
+                'tok': tok, 'stdev': s.get('eff_tokens_stdev', 0.0),
+                'n': s.get('n_runs', s.get('passed', 0)), 'vs': vs,
+            })
+
+    # tokens-at-fixed-success ordering: success desc, then cheaper tokens asc.
+    rows.sort(key=lambda r: (-(r['success'] or 0.0),
+                             r['tok'] if r['tok'] is not None else float('inf')))
+
+    out = ['', '# cram rig leaderboard', '',
+           '| # | Provider | Run | Success | Eff tokens (±σ) | vs base | N |',
+           '|--:|---|---|--:|--:|--:|--:|']
+    for i, r in enumerate(rows, 1):
+        succ = f"{r['success']:.0%}" if r['success'] is not None else '—'
+        if r['tok'] is not None:
+            tok = f"{r['tok']:,.0f} ±{r['stdev']:,.0f}" if r['stdev'] else f"{r['tok']:,.0f}"
+        else:
+            tok = '—'
+        vs = f"{r['vs']:+.0%}" if r['vs'] is not None else '—'
+        out.append(f"| {i} | {r['provider']} | {r['label']} | {succ} | {tok} | {vs} | {r['n']} |")
+    if not rows:
+        out.append('| — | (no results) | | | | | |')
+    out += ['',
+            '_Ranked by tokens at fixed success: higher success first, then cheaper. '
+            'Token counts are comparable only within a run (same model + cram version); '
+            '`vs base` is the within-run delta._', '']
+    return '\n'.join(out)
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
@@ -829,8 +914,26 @@ def main() -> None:
     parser.add_argument('--runner', choices=('claude', 'codex'), default='claude',
                         help='headless coding agent for controlled mode '
                              '(default: claude)')
+    parser.add_argument('--repeats', type=int, default=1, metavar='N',
+                        help='run each (task × provider) cell N times for variance '
+                             '(default: 1)')
+    parser.add_argument('--tier', default=None, metavar='TIER',
+                        help='only run tasks whose corpus "tier" matches '
+                             '(e.g. small|medium|large)')
+    parser.add_argument('--leaderboard', metavar='GLOB', default=None,
+                        help='render a markdown leaderboard from committed result '
+                             'JSON files matching GLOB, then exit')
     parser.add_argument('--json', action='store_true', dest='as_json')
     args = parser.parse_args()
+
+    # ── Leaderboard mode ────────────────────────────────────────────────────
+    if args.leaderboard:
+        files = sorted(glob.glob(args.leaderboard))
+        if not files:
+            print(f'No result files match {args.leaderboard!r}.', file=sys.stderr)
+            raise SystemExit(1)
+        print(render_leaderboard(files))
+        return
 
     # ── Observational mode ──────────────────────────────────────────────────
     if args.observe:
@@ -849,6 +952,12 @@ def main() -> None:
                      '(or use --observe <optimizer>)')
 
     corpus = load_corpus(args.corpus)
+    if args.tier:
+        corpus = [t for t in corpus if t.tier == args.tier]
+        if not corpus:
+            parser.error(f'no tasks with tier {args.tier!r} in the corpus')
+    if args.repeats < 1:
+        parser.error('--repeats must be >= 1')
     try:
         providers = [get_provider(n.strip()) for n in args.providers.split(',') if n.strip()]
     except KeyError as e:
@@ -868,7 +977,7 @@ def main() -> None:
     import tempfile
     work_root = args.work_root or tempfile.mkdtemp(prefix='cram-rig-')
     results = run_rig(corpus, providers, runner, CommandOracle(),
-                      work_root=work_root)
+                      work_root=work_root, repeats=args.repeats)
     summary = summarize(results)
     if args.as_json:
         print(json.dumps(summary, indent=2))

@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "name": "cram-bench-v1",
+    "description": "Self-contained, tiered benchmark for cram rig. No external clone required; every task ships red and is fixed by editing source until `pytest -q` passes.",
+    "cram_version": "0.8.1",
+    "tiers": ["small", "medium", "large"],
+    "repeats": 3
+  },
+  "tasks": [
+    {
+      "id": "fix-failing-test",
+      "tier": "small",
+      "prompt": "Run the tests in this directory with `pytest -q`. One test fails because of a bug in stats.py (the even-length case of median is wrong). Fix stats.py so all tests pass. Do not edit the tests.",
+      "fixture": "../fixtures/fix-failing-test",
+      "check": ["python", "-m", "pytest", "-q"]
+    },
+    {
+      "id": "add-cli-flag",
+      "tier": "small",
+      "prompt": "app.py is a CLI with no --verbose flag. test_app.py (the spec) expects that passing --verbose also prints a line containing 'debug', while the result line is always printed. Implement the --verbose flag in app.py so `pytest -q` passes. Do not edit the tests.",
+      "fixture": "../fixtures/add-cli-flag",
+      "check": ["python", "-m", "pytest", "-q"]
+    },
+    {
+      "id": "shapes-area",
+      "tier": "medium",
+      "prompt": "`pytest -q` fails in this multi-module `shapes` package. One shape's area() is wrong. Find the bug across the package and fix it so all tests pass. Do not edit the tests.",
+      "fixture": "fixtures/medium/shapes-area",
+      "check": ["python", "-m", "pytest", "-q"]
+    },
+    {
+      "id": "ledger-cli",
+      "tier": "large",
+      "prompt": "`pytest -q` fails. This package splits a small ledger across ledger/store.py, ledger/commands.py, and ledger/cli.py. The balance is computed wrong: debits and credits should net, but every entry is treated as positive. Find and fix the bug so all tests pass. Do not edit the tests.",
+      "fixture": "fixtures/large/ledger-cli",
+      "check": ["python", "-m", "pytest", "-q"]
+    }
+  ]
+}

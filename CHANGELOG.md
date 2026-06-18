@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- README leads with the zero-config wedge: a "Try it in 10 seconds — no API key" section and a
+  badge, making explicit that the `cram audit` profiler is 100% local and never calls a model.
+
 ### Added
 - Opt-in **Cursor token estimation**: `cram audit --estimate-cursor` (or
   `CRAM_CURSOR_ESTIMATE=1`) estimates read-token cost for Cursor sessions from the sizes of

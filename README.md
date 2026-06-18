@@ -3,6 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/cram-ai?color=%237b2fff&style=flat-square)](https://pypi.org/project/cram-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/cram-ai?color=%2300f5d4&style=flat-square)](https://pypi.org/project/cram-ai/)
 [![License](https://img.shields.io/github/license/vishbay/cram-ai?color=%23f72585&style=flat-square)](LICENSE)
+[![profiler: no API key](https://img.shields.io/badge/profiler-no%20API%20key-00f5d4?style=flat-square)](#try-it-in-10-seconds--no-api-key)
 
 **The profiler and referee for AI coding-agent tokens.**
 
@@ -16,6 +17,21 @@ Most token tools promise savings. cram asks the useful engineering question:
 > Did this reduce token spend without making the agent worse?
 
 It is local-first, transcript-based, and honest about what is measured versus estimated.
+
+## Try it in 10 seconds — no API key
+
+The profiler reads the agent transcripts already on your disk. No signup, no API key, no config:
+
+```bash
+pip install cram-ai
+cd your-repo
+cram audit                 # where did this repo's agent sessions spend tokens?
+cram audit --report-html   # same, as a shareable HTML dashboard
+```
+
+`cram audit` and every variant (`--report`, `--report-html`, `--session`, `--compare`, `--json`)
+are 100% local and deterministic — they never call a model. Only the optional context layer
+(`cram task`) uses an LLM.
 
 [`cram audit --report-html`](#html-report) renders the whole audit as one self-contained file:
 

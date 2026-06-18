@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 - README leads with the zero-config wedge: a "Try it in 10 seconds — no API key" section and a
   badge, making explicit that the `cram audit` profiler is 100% local and never calls a model.
+- README referee section now shows a demo GIF of `cram rig` refusing to credit a cheap-but-broken
+  arm. Reproducible via `scripts/demo/referee_demo.py` (deterministic, MockRunner) + a vhs tape.
 
 ### Added
 - Opt-in **Cursor token estimation**: `cram audit --estimate-cursor` (or

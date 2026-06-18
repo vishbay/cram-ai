@@ -530,6 +530,12 @@ carry huge shell output through the rest of a session.
 `cram rig` is the referee. It compares token usage only among runs that still pass a success
 oracle.
 
+![cram rig referee demo](docs/img/referee-demo.gif)
+
+An "optimization" that saves tokens by failing the task is not a win — the referee reports
+tokens **at fixed success**, so a cheap-but-broken arm is never credited. (Reproduce the clip
+above with `python scripts/demo/referee_demo.py`.)
+
 ```bash
 cram rig <corpus.json> --providers baseline,cram,claude-context
 cram rig <corpus.json> --repeats 3 --tier small   # N runs/cell, one tier

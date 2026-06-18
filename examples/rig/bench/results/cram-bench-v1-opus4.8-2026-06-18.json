@@ -6,7 +6,7 @@
     "cram_version": "0.8.1",
     "repeats": 2,
     "date": "2026-06-18",
-    "note": "cram arm ran without `cram init` on the synthetic fixtures, so it ~= baseline (nothing to pre-load). The meaningful signal here is repomix's whole-repo packing overhead on small tasks."
+    "note": "cram arm is `cram init`'d + `cram task` pre-loaded (it genuinely competes). On these tiny, localized fixtures every arm passes and pre-loading context is net overhead: cram +10%, repomix +21% vs baseline. Consistent with the case study \u2014 the context layer helps when there's real orientation work, which trivial fixtures lack. Optimizer setup-time context generation is not counted in the agent's effective tokens."
   },
   "summary": {
     "providers": {
@@ -16,9 +16,9 @@
         "skipped": 0,
         "passed": 8,
         "success_rate": 1.0,
-        "mean_eff_tokens_passed": 15817.5875,
+        "mean_eff_tokens_passed": 14832.625,
         "n_runs": 8,
-        "eff_tokens_stdev": 1424.5822075590268,
+        "eff_tokens_stdev": 759.7649842220947,
         "skip_reason": ""
       },
       "cram": {
@@ -27,9 +27,9 @@
         "skipped": 0,
         "passed": 8,
         "success_rate": 1.0,
-        "mean_eff_tokens_passed": 15984.675,
+        "mean_eff_tokens_passed": 16301.2125,
         "n_runs": 8,
-        "eff_tokens_stdev": 1253.74944366887,
+        "eff_tokens_stdev": 1536.4979054960502,
         "skip_reason": ""
       },
       "repomix": {
@@ -38,9 +38,9 @@
         "skipped": 0,
         "passed": 8,
         "success_rate": 1.0,
-        "mean_eff_tokens_passed": 17970.875,
+        "mean_eff_tokens_passed": 17904.1125,
         "n_runs": 8,
-        "eff_tokens_stdev": 1418.0409318404736,
+        "eff_tokens_stdev": 1020.455304860899,
         "skip_reason": ""
       }
     },
@@ -49,7 +49,7 @@
         "task_id": "fix-failing-test",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 13792.85,
+        "eff_tokens": 13969.55,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -58,7 +58,7 @@
         "task_id": "fix-failing-test",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 17263.25,
+        "eff_tokens": 13972.45,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -67,7 +67,7 @@
         "task_id": "fix-failing-test",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 17398.9,
+        "eff_tokens": 14450.4,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -76,7 +76,7 @@
         "task_id": "fix-failing-test",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 14550.05,
+        "eff_tokens": 15285.449999999999,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -85,7 +85,7 @@
         "task_id": "fix-failing-test",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 17448.45,
+        "eff_tokens": 17627.1,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -94,7 +94,7 @@
         "task_id": "fix-failing-test",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 17856.95,
+        "eff_tokens": 17626.8,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -103,7 +103,7 @@
         "task_id": "add-cli-flag",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 14713.949999999999,
+        "eff_tokens": 15068.15,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -112,7 +112,7 @@
         "task_id": "add-cli-flag",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 14703.8,
+        "eff_tokens": 14877.4,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -121,7 +121,7 @@
         "task_id": "add-cli-flag",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 14947.2,
+        "eff_tokens": 15610.55,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -130,7 +130,7 @@
         "task_id": "add-cli-flag",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 14695.099999999999,
+        "eff_tokens": 15552.75,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -139,7 +139,7 @@
         "task_id": "add-cli-flag",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 18058.55,
+        "eff_tokens": 18264.6,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -148,7 +148,7 @@
         "task_id": "add-cli-flag",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 18057.3,
+        "eff_tokens": 18292.55,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -157,7 +157,7 @@
         "task_id": "shapes-area",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 15526.2,
+        "eff_tokens": 15823.55,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -166,7 +166,7 @@
         "task_id": "shapes-area",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 15540.9,
+        "eff_tokens": 15826.65,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -175,7 +175,7 @@
         "task_id": "shapes-area",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 15525.6,
+        "eff_tokens": 16544.55,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -184,7 +184,7 @@
         "task_id": "shapes-area",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 15523.1,
+        "eff_tokens": 19938.6,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -193,7 +193,7 @@
         "task_id": "shapes-area",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 17237.2,
+        "eff_tokens": 15703.25,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -202,7 +202,7 @@
         "task_id": "shapes-area",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 15449.95,
+        "eff_tokens": 17514.899999999998,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -211,7 +211,7 @@
         "task_id": "ledger-cli",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 16560.25,
+        "eff_tokens": 13869.25,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -220,7 +220,7 @@
         "task_id": "ledger-cli",
         "provider": "baseline",
         "success": true,
-        "eff_tokens": 18439.5,
+        "eff_tokens": 15254.0,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -229,7 +229,7 @@
         "task_id": "ledger-cli",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 17700.95,
+        "eff_tokens": 16591.2,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -238,7 +238,7 @@
         "task_id": "ledger-cli",
         "provider": "cram",
         "success": true,
-        "eff_tokens": 17536.5,
+        "eff_tokens": 16436.2,
         "skipped": false,
         "reason": "",
         "rep": 1
@@ -247,7 +247,7 @@
         "task_id": "ledger-cli",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 18833.1,
+        "eff_tokens": 19227.8,
         "skipped": false,
         "reason": "",
         "rep": 0
@@ -256,7 +256,7 @@
         "task_id": "ledger-cli",
         "provider": "repomix",
         "success": true,
-        "eff_tokens": 20825.5,
+        "eff_tokens": 18975.9,
         "skipped": false,
         "reason": "",
         "rep": 1

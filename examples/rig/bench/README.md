@@ -51,16 +51,18 @@ tokens. `vs base` is the delta against the `baseline` provider **within the same
 <!-- LEADERBOARD:START -->
 | # | Provider | Run | Success | Eff tokens (±σ) | vs base | N |
 |--:|---|---|--:|--:|--:|--:|
-| 1 | baseline | claude-opus-4-8 | 100% | 15,818 ±1,425 | +0% | 8 |
-| 2 | cram | claude-opus-4-8 | 100% | 15,985 ±1,254 | +1% | 8 |
-| 3 | repomix | claude-opus-4-8 | 100% | 17,971 ±1,418 | +14% | 8 |
+| 1 | baseline | claude-opus-4-8 | 100% | 14,833 ±760 | +0% | 8 |
+| 2 | cram | claude-opus-4-8 | 100% | 16,301 ±1,536 | +10% | 8 |
+| 3 | repomix | claude-opus-4-8 | 100% | 17,904 ±1,020 | +21% | 8 |
 <!-- LEADERBOARD:END -->
 
-_Seed run: `cram-bench-v1` on `claude-opus-4-8`, N=2/cell, 2026-06-18. Read: on these small
-tasks every arm still passes, and **repomix's whole-repo packing costs +14% tokens for no
-benefit** — exactly the kind of "saving that wasn't" the referee exists to catch. (The `cram`
-arm ran without `cram init` on the synthetic fixtures, so it had nothing to pre-load and lands
-≈ baseline.)_
+_Seed run: `cram-bench-v1` on `claude-opus-4-8`, N=2/cell, 2026-06-18. The `cram` arm is
+genuinely initialized (`cram init` + `cram task`), not degraded to baseline. Read: on these
+tiny, localized tasks every arm passes and **pre-loading context is net overhead** — cram +10%,
+repomix +21% over baseline. That's the honest result: the context layer earns its keep when
+there's real orientation work (see the case study), which trivial fixtures lack — and the
+referee says so plainly. cram does beat whole-repo packing (repomix). Optimizer setup-time
+context generation isn't counted in the agent's effective tokens._
 
 ## Submit your optimizer's score
 

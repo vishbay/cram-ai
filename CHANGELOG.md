@@ -59,6 +59,9 @@ All notable changes to this project are documented here. The format is based on
   `CHANGELOG.md`, a pull-request template, and bug/feature issue templates.
 
 ### Changed
+- `CASE_STUDY.md`: added the 0.8.1 real-repo referee run (`cram rig`, N=3) — cram +20% vs
+  baseline at equal success on a specified `pallets/click` task; reported as an honest negative
+  and reconciled with the synthesis + honesty checklist.
 - `CASE_STUDY.md`: reconciled the Codex cross-runner section — separated the orientation metric
   (reads before edit, flat on Codex) from the convergence metric (the N=1 −47.5% effective-token
   result), and rewrote the synthesis so it no longer reads as self-contradictory.

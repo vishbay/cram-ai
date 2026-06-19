@@ -47,6 +47,36 @@ re-run in this pilot; the 0.5.1 results below stand as the recorded before/after
 
 ---
 
+## 0.8.1 referee run — real-repo benchmark (`cram rig`, N=3)
+
+The profiler pilot above shows *where tokens go*. This is the **referee**: a controlled
+tokens-at-fixed-success comparison on a real repo, from the reproducible benchmark
+([`examples/rig/bench/`](examples/rig/bench), tier `cram-bench-real-v1`). The task pins
+`pallets/click` at a bugfix commit's parent and overlays a clean-room regression test as the
+oracle (red→green); the agent must mark an optional subcommand optional in the help synopsis.
+
+- **Tool:** cram-ai 0.8.1 · **Runner:** `claude -p` · **Model:** `claude-opus-4-8` · **N=3/arm**
+- **cram arm:** genuinely initialized (`cram init` + `cram task`), not degraded to baseline.
+- Raw result: [`examples/rig/bench/results/cram-bench-real-v1-opus4.8-2026-06-19.json`](examples/rig/bench/results/cram-bench-real-v1-opus4.8-2026-06-19.json)
+
+| Arm | Success | Effective tokens (±σ) | vs baseline |
+|---|---:|---:|---:|
+| baseline | 3/3 | 20,083 ±2,593 | — |
+| cram context in `CLAUDE.md` | 3/3 | 24,038 ±7,591 | **+20%** |
+
+**Read — an honest negative.** Both arms passed; cram was **+20% more expensive**, with much
+higher variance. Even on a real codebase the auto-context did not pay off here — because the
+prompt already names the symptom *and* the oracle test, leaving little orientation to save. This
+is exactly the scope limit stated above: cram earns its keep on **natural, discovery-heavy**
+prompts, not specified ones. The point of showing it is the referee working as intended — it
+reports a loss for cram's own context layer rather than flattering it.
+
+> repomix was run on the self-contained tier only; its pack of `click` is ~292k tokens (obvious
+> overhead). An optimizer's setup-time context generation (cram's `init`/`task`) is not counted
+> in the agent's effective tokens — the rig measures the agent run at fixed success.
+
+---
+
 ## Where cram should help
 
 The expected savings depend on how much orientation the agent must do. These
@@ -209,6 +239,9 @@ the **auto-orientation / excerpt** value of the context layer is **not supported
 result by these data — it helps mainly when the target file is localized and nameable, and even
 then only on one runner here; the lone Codex token reduction is suggestive but stands alone.
 
+The 0.8.1 real-repo referee run above is consistent: on a **specified** prompt (symptom + oracle
+named), cram was **+20%**, a clean negative. Nothing in these data overturns the conclusion.
+
 **Important scope limit:** every cell exercised the *auto-generated* half
 (`ARCHITECTURE`/`SYMBOLS`/excerpts) with `DECISIONS.md`/`GOTCHAS.md` **empty**. The
 human-curated tacit-knowledge half (facts an agent cannot grep) was **not tested**, so it is
@@ -226,4 +259,5 @@ treat the context layer as optional, and as unproven for auto-orientation specif
 - [x] Metric disagreement disclosed (Codex #2786-natural: flat orientation, lower convergence)
 - [x] Before/after compared at equal task success (light "fix lands + tests pass" oracle)
 - [x] Upfront cost of the context layer shown, not hidden
+- [x] 0.8.1 real-repo referee run (N=3) reported even though it's a loss for cram (+20%)
 - [ ] Caveat: one repo, small N — does not generalize

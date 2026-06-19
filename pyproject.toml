@@ -8,7 +8,7 @@ version = "0.8.2"
 description = "The profiler and referee for AI coding-agent tokens — audit where agent spend goes from real transcripts, get evidence-backed fixes, and verify any optimization actually worked"
 readme = "README.md"
 license = "Apache-2.0"
-authors = [{ name = "Vish Bayavarapu", email = "vishbay19@gmail.com" }]
+authors = [{ name = "Vish Bayavarapu" }]
 requires-python = ">=3.10"
 keywords = ["ai", "llm", "context", "token", "coding", "claude", "cursor", "copilot"]
 classifiers = [

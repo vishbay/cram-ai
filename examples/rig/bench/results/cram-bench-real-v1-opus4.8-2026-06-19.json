@@ -1,0 +1,94 @@
+{
+  "meta": {
+    "name": "cram-bench-real-v1",
+    "model": "claude-opus-4-8",
+    "runner": "claude",
+    "cram_version": "0.8.1",
+    "repeats": 3,
+    "date": "2026-06-19",
+    "task": "click-synopsis-optional (pallets/click @ 8240d25, clean-room oracle)",
+    "note": "Real-repo tier. cram +20% vs baseline at equal success (both 100%), with higher variance. Even on a real codebase the auto-context didn't pay off here \u2014 but the prompt already specifies the symptom and the oracle test, so there's little orientation to save; consistent with the case study (auto-context helps on natural/discovery-heavy prompts, not specified ones). repomix omitted: its pack of click is ~292k tokens, obvious overhead. Optimizer setup-time context generation isn't counted in the agent's effective tokens."
+  },
+  "summary": {
+    "providers": {
+      "baseline": {
+        "tasks": 3,
+        "ran": 3,
+        "skipped": 0,
+        "passed": 3,
+        "success_rate": 1.0,
+        "mean_eff_tokens_passed": 20083.399999999998,
+        "n_runs": 3,
+        "eff_tokens_stdev": 2593.4185704715437,
+        "skip_reason": ""
+      },
+      "cram": {
+        "tasks": 3,
+        "ran": 3,
+        "skipped": 0,
+        "passed": 3,
+        "success_rate": 1.0,
+        "mean_eff_tokens_passed": 24037.88333333333,
+        "n_runs": 3,
+        "eff_tokens_stdev": 7590.749403751618,
+        "skip_reason": ""
+      }
+    },
+    "results": [
+      {
+        "task_id": "click-synopsis-optional",
+        "provider": "baseline",
+        "success": true,
+        "eff_tokens": 18019.65,
+        "skipped": false,
+        "reason": "",
+        "rep": 0
+      },
+      {
+        "task_id": "click-synopsis-optional",
+        "provider": "baseline",
+        "success": true,
+        "eff_tokens": 18489.55,
+        "skipped": false,
+        "reason": "",
+        "rep": 1
+      },
+      {
+        "task_id": "click-synopsis-optional",
+        "provider": "baseline",
+        "success": true,
+        "eff_tokens": 23741.0,
+        "skipped": false,
+        "reason": "",
+        "rep": 2
+      },
+      {
+        "task_id": "click-synopsis-optional",
+        "provider": "cram",
+        "success": true,
+        "eff_tokens": 18881.2,
+        "skipped": false,
+        "reason": "",
+        "rep": 0
+      },
+      {
+        "task_id": "click-synopsis-optional",
+        "provider": "cram",
+        "success": true,
+        "eff_tokens": 34770.1,
+        "skipped": false,
+        "reason": "",
+        "rep": 1
+      },
+      {
+        "task_id": "click-synopsis-optional",
+        "provider": "cram",
+        "success": true,
+        "eff_tokens": 18462.35,
+        "skipped": false,
+        "reason": "",
+        "rep": 2
+      }
+    ]
+  }
+}

@@ -927,53 +927,58 @@ def _load_result(path: str) -> dict:
 def render_leaderboard(result_files: list[str], *, baseline: str = 'baseline') -> str:
     """Markdown leaderboard across committed rig result files.
 
-    Each file contributes one row per provider. Rows are ranked by
-    tokens-at-fixed-success: highest success rate first, then cheapest effective
-    tokens — so a provider is never credited for a low token count it only
-    achieved by failing the task. `vs base` is computed against the baseline
-    provider *within the same file* (cross-machine token counts aren't
-    comparable in absolute terms; only the within-run delta is).
+    Results are grouped by benchmark (`meta.name`) — a separate ranked table per
+    corpus, because absolute token counts from different corpora aren't
+    comparable. Within each table, rows are ranked by tokens-at-fixed-success:
+    highest success first, then cheapest effective tokens — so a provider is
+    never credited for a low token count it only got by failing the task.
+    `vs base` is computed against the baseline provider within the same file.
     """
-    rows: list[dict] = []
+    groups: dict[str, list[dict]] = {}
     for path in result_files:
         doc = _load_result(path)
         meta = doc['meta']
         provs = doc['summary'].get('providers', {})
         base_tok = provs.get(baseline, {}).get('mean_eff_tokens_passed')
-        label = meta.get('model') or meta.get('name') or os.path.basename(path)
+        bench = meta.get('name') or os.path.basename(path)
+        label = meta.get('model') or os.path.basename(path)
         for name, s in provs.items():
             if not s.get('ran'):
                 continue
             tok = s.get('mean_eff_tokens_passed')
             vs = ((tok - base_tok) / base_tok) if (tok is not None and base_tok) else None
-            rows.append({
+            groups.setdefault(bench, []).append({
                 'provider': name, 'label': label,
                 'success': s.get('success_rate'),
                 'tok': tok, 'stdev': s.get('eff_tokens_stdev', 0.0),
                 'n': s.get('n_runs', s.get('passed', 0)), 'vs': vs,
             })
 
-    # tokens-at-fixed-success ordering: success desc, then cheaper tokens asc.
-    rows.sort(key=lambda r: (-(r['success'] or 0.0),
-                             r['tok'] if r['tok'] is not None else float('inf')))
+    out = ['', '# cram rig leaderboard', '']
+    if not groups:
+        out += ['_(no results)_', '']
+        return '\n'.join(out)
 
-    out = ['', '# cram rig leaderboard', '',
-           '| # | Provider | Run | Success | Eff tokens (±σ) | vs base | N |',
-           '|--:|---|---|--:|--:|--:|--:|']
-    for i, r in enumerate(rows, 1):
-        succ = f"{r['success']:.0%}" if r['success'] is not None else '—'
-        if r['tok'] is not None:
-            tok = f"{r['tok']:,.0f} ±{r['stdev']:,.0f}" if r['stdev'] else f"{r['tok']:,.0f}"
-        else:
-            tok = '—'
-        vs = f"{r['vs']:+.0%}" if r['vs'] is not None else '—'
-        out.append(f"| {i} | {r['provider']} | {r['label']} | {succ} | {tok} | {vs} | {r['n']} |")
-    if not rows:
-        out.append('| — | (no results) | | | | | |')
-    out += ['',
-            '_Ranked by tokens at fixed success: higher success first, then cheaper. '
-            'Token counts are comparable only within a run (same model + cram version); '
-            '`vs base` is the within-run delta._', '']
+    for bench in sorted(groups):
+        rows = groups[bench]
+        # tokens-at-fixed-success ordering: success desc, then cheaper tokens asc.
+        rows.sort(key=lambda r: (-(r['success'] or 0.0),
+                                 r['tok'] if r['tok'] is not None else float('inf')))
+        out += [f'## {bench}', '',
+                '| # | Provider | Model | Success | Eff tokens (±σ) | vs base | N |',
+                '|--:|---|---|--:|--:|--:|--:|']
+        for i, r in enumerate(rows, 1):
+            succ = f"{r['success']:.0%}" if r['success'] is not None else '—'
+            if r['tok'] is not None:
+                tok = f"{r['tok']:,.0f} ±{r['stdev']:,.0f}" if r['stdev'] else f"{r['tok']:,.0f}"
+            else:
+                tok = '—'
+            vs = f"{r['vs']:+.0%}" if r['vs'] is not None else '—'
+            out.append(f"| {i} | {r['provider']} | {r['label']} | {succ} | {tok} | {vs} | {r['n']} |")
+        out.append('')
+    out += ['_Ranked by tokens at fixed success: higher success first, then cheaper. '
+            'Token counts are comparable only within a benchmark + model; `vs base` is the '
+            'within-run delta._', '']
     return '\n'.join(out)
 
 

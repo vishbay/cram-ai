@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format is based on
   Safe because rig runs in throwaway per-task workdirs.
 
 ### Added
+- **Real-repo benchmark tier** (`corpus.real.json`): a `cram rig` task pinned to `pallets/click`
+  at a bugfix commit's parent, with a clean-room regression-test overlay as a red→green oracle —
+  the tier where context optimizers should pay off. `Task` gains git-source fields (`repo`/`ref`/
+  `overlay`/`env`); `_prepare_workdir` clones from a shared cache + applies the overlay;
+  `render_leaderboard` now groups results per benchmark. First result: cram +20% vs baseline at
+  equal success on a *specified* task (honest — auto-context helps on discovery-heavy prompts).
 - **Open leaderboard / "submit your optimizer" flow** for `cram-bench-v1`: a seed result
   (`baseline` vs `cram` vs `repomix` on `claude-opus-4-8`) committed under
   `examples/rig/bench/results/`, a submission validator (`scripts/validate_bench_result.py`,

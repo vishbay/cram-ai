@@ -17,7 +17,43 @@ is not credited.
 | medium | `shapes-area` | bug in a multi-module package |
 | large | `ledger-cli` | bug spanning store / commands / cli |
 
+These four ship in `corpus.bench.json` and are **fully self-contained** (no clone).
+
+### Real-repo tier (`corpus.real.json`)
+
+A separate corpus that pins a **real upstream repo** at a bugfix commit's *parent* (bug present)
+and overlays a **clean-room** regression test as the oracle (red→green). This is the tier where
+context optimizers should pay off — a large, unfamiliar codebase with genuine orientation cost.
+**Requires network** (it clones the repo).
+
+| tier | task | repo | what |
+|---|---|---|---|
+| real | `click-synopsis-optional` | `pallets/click` @ `8240d25` | mark an optional subcommand optional in the help synopsis (fix in `core.py`) |
+
 ## Run it
+
+```bash
+# Real-repo tier (clones pallets/click):
+cram rig examples/rig/bench/corpus.real.json \
+    --providers baseline,cram --runner claude --repeats 3 --json \
+    > examples/rig/bench/results/cram-bench-real-v1-<model>-$(date +%F).json
+```
+
+```bash
+# Dry run — resolve the grid + provider availability, no execution:
+cram rig examples/rig/bench/corpus.bench.json --dry-run
+
+# One tier, N repeats per cell, JSON out (needs a live runner: claude or codex):
+cram rig examples/rig/bench/corpus.bench.json \
+    --tier small --repeats 3 --runner claude --json \
+    > examples/rig/bench/results/claude-sonnet-$(date +%F).json
+
+# Whole corpus:
+cram rig examples/rig/bench/corpus.bench.json --repeats 3 --runner claude --json > result.json
+```
+
+`--repeats N` runs each (task × provider) cell N times in isolated workdirs so the summary can
+report variance (`eff_tokens_stdev`).
 
 ```bash
 # Dry run — resolve the grid + provider availability, no execution:
@@ -49,20 +85,30 @@ tokens. `vs base` is the delta against the `baseline` provider **within the same
 ### Current board
 
 <!-- LEADERBOARD:START -->
-| # | Provider | Run | Success | Eff tokens (±σ) | vs base | N |
+### cram-bench-v1 (self-contained tier)
+
+| # | Provider | Model | Success | Eff tokens (±σ) | vs base | N |
 |--:|---|---|--:|--:|--:|--:|
 | 1 | baseline | claude-opus-4-8 | 100% | 14,833 ±760 | +0% | 8 |
 | 2 | cram | claude-opus-4-8 | 100% | 16,301 ±1,536 | +10% | 8 |
 | 3 | repomix | claude-opus-4-8 | 100% | 17,904 ±1,020 | +21% | 8 |
+
+### cram-bench-real-v1 (real-repo tier · pallets/click)
+
+| # | Provider | Model | Success | Eff tokens (±σ) | vs base | N |
+|--:|---|---|--:|--:|--:|--:|
+| 1 | baseline | claude-opus-4-8 | 100% | 20,083 ±2,593 | +0% | 3 |
+| 2 | cram | claude-opus-4-8 | 100% | 24,038 ±7,591 | +20% | 3 |
 <!-- LEADERBOARD:END -->
 
-_Seed run: `cram-bench-v1` on `claude-opus-4-8`, N=2/cell, 2026-06-18. The `cram` arm is
-genuinely initialized (`cram init` + `cram task`), not degraded to baseline. Read: on these
-tiny, localized tasks every arm passes and **pre-loading context is net overhead** — cram +10%,
-repomix +21% over baseline. That's the honest result: the context layer earns its keep when
-there's real orientation work (see the case study), which trivial fixtures lack — and the
-referee says so plainly. cram does beat whole-repo packing (repomix). Optimizer setup-time
-context generation isn't counted in the agent's effective tokens._
+_Seed runs on `claude-opus-4-8`. The `cram` arm is genuinely initialized (`cram init` +
+`cram task`), not degraded to baseline. **Honest read:** on both the tiny fixtures and the real
+click task, pre-loading context was net overhead at equal success (cram +10% / +20%; repomix
++21%) — and the referee says so. The likely reason on the real task: the prompt already names
+the symptom and the oracle test, so there's little orientation to save — exactly the case-study
+pattern where the auto-context helps on **natural, discovery-heavy** prompts, not specified
+ones. repomix is omitted on the real tier: its pack of click is ~292k tokens, obvious overhead.
+Optimizer setup-time context generation isn't counted in the agent's effective tokens._
 
 ## Submit your optimizer's score
 

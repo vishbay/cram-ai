@@ -56,10 +56,13 @@ Releases are tag-driven: pushing a `vX.Y.Z` tag triggers `.github/workflows/publ
 builds and publishes to PyPI via trusted publishing. Bump `version` in `pyproject.toml`, move
 the `## [Unreleased]` entries under the new version in `CHANGELOG.md`, then tag.
 
-## Reporting bugs / requesting features
+## Where to reach out
 
-Use the issue templates under [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE). For security
-issues, see [SECURITY.md](SECURITY.md) — do not open a public issue.
+All contact is through GitHub — no email needed:
+
+- **Bugs / features:** open an issue with the templates under [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE).
+- **Questions / ideas:** use [GitHub Discussions](https://github.com/vishbay/cram-ai/discussions) (if enabled), otherwise open an issue.
+- **Security or other private matters:** use GitHub's private vulnerability reporting — see [SECURITY.md](SECURITY.md). Do not open a public issue for these.
 
 ## Code of conduct
 

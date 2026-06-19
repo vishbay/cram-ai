@@ -5,10 +5,12 @@
 Please report security issues **privately**. Do not open a public GitHub issue for a
 vulnerability.
 
-- Preferred: use GitHub's [private vulnerability reporting](https://github.com/vishbay/cram-ai/security/advisories/new)
-  ("Report a vulnerability" under the Security tab).
-- Alternative: email the maintainer at **vishbay19@gmail.com** with details and, if possible, a
-  reproduction.
+Use GitHub's [private vulnerability reporting](https://github.com/vishbay/cram-ai/security/advisories/new)
+("Report a vulnerability" under the repository's **Security** tab). It's a private channel
+between you and the maintainers — include details and, if possible, a reproduction.
+
+If you can't access that form, open a public issue that says only "requesting a private security
+contact" (no details) and a maintainer will follow up.
 
 You can expect an acknowledgement within a few days. Once a fix is available, we will
 coordinate disclosure and credit you if you wish.

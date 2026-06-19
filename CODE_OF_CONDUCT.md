@@ -25,7 +25,8 @@ https://www.contributor-covenant.org/version/2/1/code_of_conduct/
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately to
-the maintainer at **vishbay19@gmail.com**. All complaints will be reviewed and investigated
-promptly and fairly. The maintainer is obligated to respect the privacy and security of the
-reporter of any incident.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported **privately**
+through GitHub's [private vulnerability reporting](https://github.com/vishbay/cram-ai/security/advisories/new)
+form (the repository's **Security** tab) — it serves as the project's confidential contact
+channel. All reports will be reviewed and investigated promptly and fairly, and the maintainers
+will respect the privacy and security of the reporter of any incident.

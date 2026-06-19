@@ -6,69 +6,51 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-06-19
+
+The "referee" release: `cram rig` becomes a reproducible, gamified, third-party-capable
+benchmark — and the case study reports cram's own context layer honestly (including losses).
+
+### Added
+- **Reproducible referee benchmark** `cram-bench-v1` (`examples/rig/bench/`): a self-contained,
+  tiered corpus (small/medium/large) whose fixtures ship red — no external clone needed.
+- **Real-repo benchmark tier** (`corpus.real.json`): a `cram rig` task pinned to `pallets/click`
+  at a bugfix commit's parent, with a clean-room regression-test overlay as a red→green oracle.
+  `Task` gains git-source fields (`repo`/`ref`/`overlay`/`env`); `_prepare_workdir` clones from a
+  shared cache + applies the overlay.
+- **Generic `CommandAdapter`** — referee any context-packer that emits context on stdout, with
+  key-free presets `repomix` (`npx -y repomix --stdout`) and `files-to-prompt`.
+- **Open leaderboard / "submit your optimizer" flow**: committed result files, a submission
+  validator (`scripts/validate_bench_result.py` — baseline arm + declared model/version +
+  success-first), a `bench leaderboard` CI workflow, and a submission guide. `render_leaderboard`
+  groups per benchmark.
+- `cram rig` gains `--repeats N`, `--tier`, and `--leaderboard <glob>`; `summarize()` adds
+  `n_runs` and `eff_tokens_stdev`.
+- **Opt-in Cursor token estimation**: `cram audit --estimate-cursor` (or `CRAM_CURSOR_ESTIMATE=1`)
+  estimates read-token cost from file sizes, always labelled `estimated`, tunable via
+  `CRAM_CHARS_PER_TOKEN`, kept out of measured aggregates.
+- **GitHub Action** (`action.yml`) — posts a token-waste audit as a sticky PR comment and can
+  gate a PR on the `cram rig` referee. Key-free, backed by `cram/ci.py`. `cram init --team` drops
+  a starter `cram-audit.yml`.
+- **Contributor scaffolding**: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+  `CHANGELOG.md`, a PR template, and bug/feature issue templates.
+
+### Changed
+- `cram rig`: the `cram` arm now genuinely competes — `_prepare_workdir` `git init`s the workdir
+  and `CramAdapter` runs `cram init` + `cram task` for the active runner, instead of silently
+  degrading to baseline.
+- README now leads with the zero-config wedge ("Try it in 10 seconds — no API key" + badge) and a
+  `cram rig` referee demo GIF (`scripts/demo/`).
+- `CASE_STUDY.md`: added a 0.8.1 profiler pilot and the real-repo referee run (cram +20%, an
+  honest negative), and reconciled the Codex cross-runner section.
+
 ### Fixed
 - `cram rig --runner claude` (`LiveRunner`) now passes `--dangerously-skip-permissions`, so a
-  headless run can actually edit files and run the oracle. Without it `claude -p` made no changes
-  and every arm failed with zero work — the controlled benchmark only ever ran via `MockRunner`.
-  Safe because rig runs in throwaway per-task workdirs.
-
-### Added
-- **Real-repo benchmark tier** (`corpus.real.json`): a `cram rig` task pinned to `pallets/click`
-  at a bugfix commit's parent, with a clean-room regression-test overlay as a red→green oracle —
-  the tier where context optimizers should pay off. `Task` gains git-source fields (`repo`/`ref`/
-  `overlay`/`env`); `_prepare_workdir` clones from a shared cache + applies the overlay;
-  `render_leaderboard` now groups results per benchmark. First result: cram +20% vs baseline at
-  equal success on a *specified* task (honest — auto-context helps on discovery-heavy prompts).
-- **Open leaderboard / "submit your optimizer" flow** for `cram-bench-v1`: a seed result
-  (`baseline` vs `cram` vs `repomix` on `claude-opus-4-8`) committed under
-  `examples/rig/bench/results/`, a submission validator (`scripts/validate_bench_result.py`,
-  enforces a baseline arm + declared model/version + success-first), a `bench leaderboard` CI
-  workflow that validates submissions and renders the board, and a submission guide. First
-  finding: repomix's whole-repo packing costs +14% tokens at equal success on small tasks.
-- Generic `CommandAdapter` for `cram rig`: referee **any** context-packer that emits context on
-  stdout, with no cram-specific integration. Ships key-free presets `repomix`
-  (`npx -y repomix --stdout`) and `files-to-prompt`, so third-party optimizers can be compared
-  without API keys or heavy setup.
-
-### Changed
-- `CASE_STUDY.md`: added a 0.8.1 re-run pilot (issue #3571, baseline, N=3, `claude-opus-4-8`)
-  validating the profiler pipeline end-to-end; raw results committed under
-  `examples/case-study/results/`. Clearly marked not-comparable to the 0.5.1 `sonnet` tables.
-- README leads with the zero-config wedge: a "Try it in 10 seconds — no API key" section and a
-  badge, making explicit that the `cram audit` profiler is 100% local and never calls a model.
-- README referee section now shows a demo GIF of `cram rig` refusing to credit a cheap-but-broken
-  arm. Reproducible via `scripts/demo/referee_demo.py` (deterministic, MockRunner) + a vhs tape.
-
-### Added
-- Opt-in **Cursor token estimation**: `cram audit --estimate-cursor` (or
-  `CRAM_CURSOR_ESTIMATE=1`) estimates read-token cost for Cursor sessions from the sizes of
-  files they read, since Cursor transcripts carry no usage data. Always labelled `estimated`,
-  tunable via `CRAM_CHARS_PER_TOKEN` (default 4), and kept strictly out of the measured
-  aggregates. New pure helper `audit_events.estimate_read_tokens_from_counts`.
-- **GitHub Action** (`action.yml`) that posts a token-waste audit as a sticky PR comment and can
-  gate a PR on the `cram rig` referee. Key-free; consumes committed/uploaded audit/rig JSON
-  (transcripts never exist in CI). Modes: `compare`, `report`, `rig`. Backed by a new key-free
-  `cram/ci.py` engine (`render_compare_comment`, `render_report_comment`, `evaluate_rig_gate`,
-  `python -m cram.ci`). `cram init --team` now also drops a starter `cram-audit.yml`.
-- Reproducible referee benchmark (`examples/rig/bench/`): a self-contained, tiered corpus
-  (`cram-bench-v1`, small/medium/large) with fixtures that ship red — no external clone needed.
-- `cram rig` gains `--repeats N` (run each cell N times for variance), `--tier` (filter by
-  corpus tier), and `--leaderboard <glob>` (render a ranked markdown leaderboard from committed
-  result JSON). `summarize()` now reports `n_runs` and `eff_tokens_stdev` (additive).
-- Contributor scaffolding: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
-  `CHANGELOG.md`, a pull-request template, and bug/feature issue templates.
-
-### Changed
-- `CASE_STUDY.md`: added the 0.8.1 real-repo referee run (`cram rig`, N=3) — cram +20% vs
-  baseline at equal success on a specified `pallets/click` task; reported as an honest negative
-  and reconciled with the synthesis + honesty checklist.
-- `CASE_STUDY.md`: reconciled the Codex cross-runner section — separated the orientation metric
-  (reads before edit, flat on Codex) from the convergence metric (the N=1 −47.5% effective-token
-  result), and rewrote the synthesis so it no longer reads as self-contradictory.
-
-### Fixed
-- `cram rig` no longer copies fixture `__pycache__`/`*.pyc` into run workdirs (stale bytecode
-  could shadow an agent's edit and corrupt the oracle).
+  headless run can actually edit files and run the oracle (previously every arm did zero work).
+- `cram rig --repeats` workdir names broke transcript resolution (Claude dashes `#`), making every
+  repeat measure 0 tokens — switched to a `-rep<n>` suffix.
+- `cram rig` no longer copies fixture `__pycache__`/`*.pyc` into run workdirs (stale bytecode could
+  shadow an agent's edit and corrupt the oracle).
 
 ## [0.8.1] — 2026-06-17
 ### Changed
@@ -124,7 +106,8 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 - Audit-first repositioning: see where your agent tokens go.
 
-[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/vishbay/cram-ai/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/vishbay/cram-ai/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/vishbay/cram-ai/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/vishbay/cram-ai/compare/v0.6.3...v0.7.0

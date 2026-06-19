@@ -88,6 +88,10 @@ class TestProviders:
         providers = rig._configure_providers_for_runner([rig.CramAdapter()], 'codex')
         assert providers[0].target == 'codex'
 
+    def test_cram_provider_targets_claude_for_claude_runner(self):
+        providers = rig._configure_providers_for_runner([rig.CramAdapter()], 'claude')
+        assert providers[0].target == 'claude'
+
     def test_cram_setup_passes_target_when_configured(self, tmp_path, monkeypatch):
         calls = {}
 

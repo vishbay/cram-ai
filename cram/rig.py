@@ -49,18 +49,29 @@ from cram.cost_model import get_provider_pricing
 
 @dataclasses.dataclass(slots=True)
 class Task:
-    """One benchmark task: a prompt, an optional fixture, and a success oracle.
+    """One benchmark task: a prompt, a code source, and a success oracle.
 
-    fixture: path to a directory copied into each run's workdir before the agent
-             starts (the code to work on). None → an empty workdir.
+    The workdir is populated from exactly one source:
+      fixture: a local directory copied in (a self-contained fixture); or
+      repo + ref: a git URL cloned and checked out at `ref` (a real repo at a
+               pinned SHA — the "real-repo" tier, no vendoring needed).
+    overlay: a local directory whose files are copied in *after* the source —
+             e.g. a clean-room regression test that's the oracle (so we don't
+             vendor the upstream repo's tests).
     check:   argv list run in the workdir after the agent finishes; exit 0 means
-             the task succeeded. Empty → the task always "succeeds" (token-only).
+             success. Empty → the task always "succeeds" (token-only).
+    env:     extra environment for the check (e.g. {"PYTHONPATH": "src"} so a
+             cloned, not-installed library imports).
     """
     id: str
     prompt: str
     fixture: str | None = None
     check: list[str] = dataclasses.field(default_factory=list)
     tier: str | None = None
+    repo: str | None = None
+    ref: str | None = None
+    overlay: str | None = None
+    env: dict = dataclasses.field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d: dict) -> 'Task':
@@ -72,7 +83,9 @@ class Task:
         tier = d.get('tier')
         return cls(id=str(d['id']), prompt=str(d['prompt']),
                    fixture=d.get('fixture'), check=list(check),
-                   tier=str(tier) if tier is not None else None)
+                   tier=str(tier) if tier is not None else None,
+                   repo=d.get('repo'), ref=d.get('ref'),
+                   overlay=d.get('overlay'), env=dict(d.get('env') or {}))
 
 
 def load_corpus(path: str) -> list[Task]:
@@ -93,6 +106,8 @@ def load_corpus(path: str) -> list[Task]:
         seen.add(t.id)
         if t.fixture and not os.path.isabs(t.fixture):
             t.fixture = os.path.normpath(os.path.join(base, t.fixture))
+        if t.overlay and not os.path.isabs(t.overlay):
+            t.overlay = os.path.normpath(os.path.join(base, t.overlay))
         tasks.append(t)
     return tasks
 
@@ -539,8 +554,9 @@ class CommandOracle:
     def score(self, task: Task, workdir: str) -> bool:
         if not task.check:
             return True
+        env = {**os.environ, **{k: str(v) for k, v in (task.env or {}).items()}}
         try:
-            r = subprocess.run(task.check, cwd=workdir,
+            r = subprocess.run(task.check, cwd=workdir, env=env,
                                capture_output=True, timeout=self.timeout)
         except Exception:
             return False
@@ -734,21 +750,58 @@ class RunResult:
 _FIXTURE_IGNORE = shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache')
 
 
-def _prepare_workdir(task: Task, wd: str) -> str:
-    """Create one run's working directory at `wd` from the task fixture.
+# Cache of full repo clones (URL → local path), so the many per-cell workdirs
+# clone cheaply with `--shared` from a single fetch instead of hitting the
+# network N times. Lives in the system temp dir; not measured/audited.
+_REPO_CACHE: dict[str, str] = {}
 
-    The workdir is `git init`'d so it's a real repo: cram (find_git_root) and
-    many agents expect a git root, and all arms get the same realistic
-    environment. Best-effort — a missing git just leaves a plain directory.
-    """
-    if task.fixture:
-        shutil.copytree(task.fixture, wd, ignore=_FIXTURE_IGNORE)
-    else:
-        os.makedirs(wd, exist_ok=True)
+
+def _repo_cache(repo: str) -> str:
+    cached = _REPO_CACHE.get(repo)
+    if cached and os.path.isdir(cached):
+        return cached
+    import hashlib
+    import tempfile
+    base = os.path.join(tempfile.gettempdir(), 'cram-rig-repocache')
+    os.makedirs(base, exist_ok=True)
+    dest = os.path.join(base, hashlib.sha1(repo.encode()).hexdigest())
+    if not os.path.isdir(dest):
+        subprocess.run(['git', 'clone', '--quiet', repo, dest], check=True, timeout=600)
+    _REPO_CACHE[repo] = dest
+    return dest
+
+
+def _git_init(wd: str) -> None:
     try:
         subprocess.run(['git', 'init', '-q'], cwd=wd, capture_output=True, timeout=30)
     except Exception:
         pass
+
+
+def _prepare_workdir(task: Task, wd: str) -> str:
+    """Create one run's working directory at `wd` from the task's code source.
+
+    Source is a local fixture (copied) or a git repo (cloned at `ref`); an
+    optional overlay (e.g. the clean-room oracle test) is copied in afterwards.
+    The workdir is a git repo either way — cram (find_git_root) and many agents
+    expect a git root, and all arms get the same realistic environment.
+    """
+    if task.repo:
+        # Clone cheaply from the shared cache, then pin to ref.
+        cache = _repo_cache(task.repo)
+        subprocess.run(['git', 'clone', '--quiet', '--shared', cache, wd],
+                       check=True, timeout=120)
+        if task.ref:
+            subprocess.run(['git', '-C', wd, 'checkout', '--quiet', task.ref],
+                           check=True, timeout=60)
+    elif task.fixture:
+        shutil.copytree(task.fixture, wd, ignore=_FIXTURE_IGNORE)
+        _git_init(wd)
+    else:
+        os.makedirs(wd, exist_ok=True)
+        _git_init(wd)
+    if task.overlay:
+        shutil.copytree(task.overlay, wd, ignore=_FIXTURE_IGNORE, dirs_exist_ok=True)
     return wd
 
 
@@ -939,9 +992,11 @@ def _configure_providers_for_runner(
     runner_name: str,
 ) -> list[ProviderAdapter]:
     for provider in providers:
-        if isinstance(provider, CramAdapter) and runner_name == 'codex':
-            provider.target = 'codex'
-        elif isinstance(provider, CommandAdapter):
+        # Inject context into the file the active runner actually reads
+        # (CLAUDE.md for claude, AGENTS.md for codex). Without an explicit
+        # target cram relies on default detection and may not inject for the
+        # claude runner, silently degrading to baseline.
+        if isinstance(provider, (CramAdapter, CommandAdapter)):
             provider.target = runner_name
     return providers
 

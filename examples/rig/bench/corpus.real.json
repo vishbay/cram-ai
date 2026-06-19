@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "name": "cram-bench-real-v1",
+    "description": "Real-repo tier: tasks pinned to a real upstream repo at a bugfix commit's PARENT (bug present), with a clean-room regression test overlaid as the oracle (red->green). Requires network to clone. This is where context optimizers should actually show value — a large, unfamiliar codebase with real orientation cost.",
+    "cram_version": "0.8.1",
+    "tiers": ["real"],
+    "repeats": 3
+  },
+  "tasks": [
+    {
+      "id": "click-synopsis-optional",
+      "tier": "real",
+      "prompt": "This is a clone of the `click` library. A group declared with `@click.group(invoke_without_command=True)` prints its --help synopsis as `Usage: cli [OPTIONS] COMMAND [ARGS]...`, but since the group can run without a subcommand the subcommand should be marked optional: `Usage: cli [OPTIONS] [COMMAND] [ARGS]...`. Find where the command synopsis/metavar is built and fix it so an optional subcommand is bracketed (required subcommands must stay unbracketed). Verify with `PYTHONPATH=src python -m pytest oracle_test.py -q`. Do not edit oracle_test.py.",
+      "repo": "https://github.com/pallets/click.git",
+      "ref": "8240d25bdbb8c081b745199620b8f2fe03b10579",
+      "overlay": "fixtures/real/click-synopsis",
+      "check": ["python", "-m", "pytest", "oracle_test.py", "-q"],
+      "env": {"PYTHONPATH": "src"}
+    }
+  ]
+}

@@ -73,5 +73,5 @@
 ## [DECISION-011] Carried-output loop is advisory-tightening only; active truncation deferred
 - **Date:** 2026-06-15
 - **Status:** Accepted
-- **Decision:** Carried-output loop is **advisory-tightening only** (Option A: detect → auto-tighten `[output]` caps → verify with `cram rig`). **Active runtime truncation** (Option B, a PostToolUse hook rewriting tool output) is **deferred** until audits show advisory caps are ignored. Rationale, alternatives, and B's preconditions live in `PLAN_CARRIED_OUTPUT.md`.
+- **Decision:** Carried-output loop is **advisory-tightening only** (Option A: detect → auto-tighten `[output]` caps → verify with `cram rig`). **Active runtime truncation** (Option B, a PostToolUse hook rewriting tool output) is **deferred** until audits show advisory caps are ignored.
 - **Reason:** B would put cram in another tool's silent-failure path — dropping needed output corrupts a session invisibly, against cram's measured/advisory ethos. A is reversible and yields the evidence to judge if B is ever worth its risk.

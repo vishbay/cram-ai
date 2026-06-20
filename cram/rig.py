@@ -546,6 +546,10 @@ class Oracle(Protocol):
     def score(self, task: Task, workdir: str) -> bool: ...
 
 
+class OracleTimeout(Exception):
+    """The success check exceeded its timeout — infra noise, not a task failure."""
+
+
 class CommandOracle:
     """Success = the task's check command exits 0 in the workdir."""
     def __init__(self, timeout: int = 300):
@@ -558,6 +562,10 @@ class CommandOracle:
         try:
             r = subprocess.run(task.check, cwd=workdir, env=env,
                                capture_output=True, timeout=self.timeout)
+        except subprocess.TimeoutExpired as e:
+            # A timeout is not a task failure — surface it so the rig records it
+            # as oracle_timeout (excluded from the success rate) rather than a loss.
+            raise OracleTimeout(f'check timed out after {self.timeout}s') from e
         except Exception:
             return False
         return r.returncode == 0
@@ -733,15 +741,33 @@ def render_observation(obs: dict, name: str) -> str:
 
 # ── Run loop ────────────────────────────────────────────────────────────────
 
+# A cell's outcome. Distinguishing these is what stops the rig from silently
+# miscounting: a run error, an oracle timeout, and a missing transcript used to
+# all look like a skip or a 0-token "success".
+#   ran           — executed, oracle gave a verdict, tokens measured
+#   no_transcript — executed, oracle gave a verdict, but tokens unmeasurable
+#   unavailable   — provider's availability gate failed (never ran)
+#   setup_error   — workdir/clone or provider.setup() raised
+#   run_error     — the agent runner raised
+#   oracle_timeout— the success check timed out (infra noise, not a task failure)
+_COUNTED_STATUSES = ('ran', 'no_transcript')   # produced a real success/fail verdict
+
+
 @dataclasses.dataclass(slots=True)
 class RunResult:
     task_id: str
     provider: str
     success: bool = False
     eff_tokens: float = 0.0
-    skipped: bool = False
+    status: str = 'ran'
+    measured: bool = True          # False when the run produced no measurable tokens
     reason: str = ''
     rep: int = 0
+
+    @property
+    def skipped(self) -> bool:
+        """Back-compat: a cell that did not produce a success/fail verdict."""
+        return self.status not in _COUNTED_STATUSES
 
 
 # Copytree must never carry stale bytecode into a run — a fixture's committed
@@ -756,17 +782,40 @@ _FIXTURE_IGNORE = shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache'
 _REPO_CACHE: dict[str, str] = {}
 
 
+def _repo_cache_dir() -> str:
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), 'cram-rig-repocache')
+
+
+def clean_repo_cache() -> str:
+    """Remove the shared clone cache. Returns the path that was cleaned."""
+    d = _repo_cache_dir()
+    shutil.rmtree(d, ignore_errors=True)
+    _REPO_CACHE.clear()
+    return d
+
+
 def _repo_cache(repo: str) -> str:
     cached = _REPO_CACHE.get(repo)
     if cached and os.path.isdir(cached):
         return cached
     import hashlib
-    import tempfile
-    base = os.path.join(tempfile.gettempdir(), 'cram-rig-repocache')
+    base = _repo_cache_dir()
     os.makedirs(base, exist_ok=True)
     dest = os.path.join(base, hashlib.sha1(repo.encode()).hexdigest())
     if not os.path.isdir(dest):
-        subprocess.run(['git', 'clone', '--quiet', repo, dest], check=True, timeout=600)
+        # One retry on transient clone failure (network) before giving up, so a
+        # blip fails a single cell (caught upstream), never the whole campaign.
+        for attempt in range(2):
+            try:
+                subprocess.run(['git', 'clone', '--quiet', repo, dest],
+                               check=True, timeout=600)
+                break
+            except Exception:
+                shutil.rmtree(dest, ignore_errors=True)
+                if attempt == 1:
+                    raise
+                time.sleep(2)
     _REPO_CACHE[repo] = dest
     return dest
 
@@ -805,24 +854,38 @@ def _prepare_workdir(task: Task, wd: str) -> str:
     return wd
 
 
+def _progress(on: bool, msg: str) -> None:
+    if on:
+        print(f'  · {msg}', file=sys.stderr, flush=True)
+
+
 def run_rig(corpus: list[Task], providers: list[ProviderAdapter],
             runner: Runner, oracle: Oracle, *, work_root: str,
             measure: Callable[[str], float] = effective_tokens,
-            repeats: int = 1) -> list[RunResult]:
+            repeats: int = 1, progress: bool = False) -> list[RunResult]:
     """Run every (task × provider), `repeats` times each, and return RunResults.
 
-    Unavailable providers are recorded once as skipped (with the availability
-    reason) rather than dropped, so the grid in the report is always complete.
-    `repeats > 1` runs each cell N times in isolated workdirs so `summarize`
-    can report variance across runs.
+    Each stage (workdir prep, provider setup, runner, oracle, measurement) sets a
+    precise `status` so a failure is never miscounted as a skip or a 0-token
+    success. Unavailable providers are recorded once. `repeats > 1` runs each cell
+    N times in isolated workdirs so `summarize` can report variance.
     """
     results: list[RunResult] = []
+
+    def record(rr: RunResult) -> None:
+        results.append(rr)
+        tag = rr.status if rr.status in _COUNTED_STATUSES else f'!{rr.status}'
+        tok = f'{rr.eff_tokens:,.0f}t' if rr.measured else '—'
+        _progress(progress, f'{rr.task_id}/{rr.provider}'
+                            f'{"" if repeats == 1 else f"#{rr.rep}"}: '
+                            f'{"pass" if rr.success else "fail"} {tag} {tok}')
+
     for task in corpus:
         for prov in providers:
             av = prov.availability()
             if not av.ok:
-                results.append(RunResult(task.id, prov.name, skipped=True,
-                                         reason=av.reason))
+                record(RunResult(task.id, prov.name, status='unavailable',
+                                 measured=False, reason=av.reason))
                 continue
             for rep in range(repeats):
                 # Keep the leaf to [A-Za-z0-9-] (+ '/'): Claude Code dashes any
@@ -830,17 +893,43 @@ def run_rig(corpus: list[Task], providers: list[ProviderAdapter],
                 # cram's resolver only dashes '/', so a '#rep' suffix made the
                 # transcript unfindable and every repeat measured 0 tokens.
                 leaf = task.id if repeats == 1 else f'{task.id}-rep{rep}'
-                wd = _prepare_workdir(task, os.path.join(work_root, prov.name, leaf))
+                wd_path = os.path.join(work_root, prov.name, leaf)
+                try:
+                    wd = _prepare_workdir(task, wd_path)
+                except Exception as e:
+                    record(RunResult(task.id, prov.name, status='setup_error',
+                                     measured=False, reason=f'workdir/clone: {e}', rep=rep))
+                    continue
                 try:
                     setup = prov.setup(task, wd)
+                except Exception as e:
+                    record(RunResult(task.id, prov.name, status='setup_error',
+                                     measured=False, reason=f'provider setup: {e}', rep=rep))
+                    continue
+                try:
                     transcript = runner.run(task, setup, wd)
+                except Exception as e:
+                    record(RunResult(task.id, prov.name, status='run_error',
+                                     measured=False, reason=f'runner: {e}', rep=rep))
+                    continue
+                try:
                     success = oracle.score(task, wd)
-                    eff = measure(transcript) if transcript else 0.0
-                    results.append(RunResult(task.id, prov.name, success=success,
-                                             eff_tokens=eff, rep=rep))
-                except Exception as e:  # a provider/runner failure is a data point
-                    results.append(RunResult(task.id, prov.name, skipped=True,
-                                             reason=f'run error: {e}', rep=rep))
+                except OracleTimeout as e:
+                    record(RunResult(task.id, prov.name, status='oracle_timeout',
+                                     measured=False, reason=str(e), rep=rep))
+                    continue
+
+                eff = measure(transcript) if transcript else 0.0
+                if transcript and eff > 0:
+                    record(RunResult(task.id, prov.name, success=success,
+                                     eff_tokens=eff, status='ran', measured=True, rep=rep))
+                else:
+                    # Oracle gave a verdict, but we couldn't measure tokens (no
+                    # transcript found, or it had no usage). Count the verdict;
+                    # don't average a phantom 0 into the provider's token cost.
+                    record(RunResult(task.id, prov.name, success=success,
+                                     eff_tokens=0.0, status='no_transcript', measured=False,
+                                     reason='no measurable transcript', rep=rep))
     return results
 
 
@@ -859,9 +948,16 @@ def summarize(results: list[RunResult]) -> dict:
 
     out: dict[str, dict] = {}
     for prov, rs in by_provider.items():
-        ran = [r for r in rs if not r.skipped]
+        ran = [r for r in rs if not r.skipped]            # produced a verdict
         passed = [r for r in ran if r.success]
-        toks = [r.eff_tokens for r in passed]
+        # Tokens are averaged only over passed AND measured runs — never fold a
+        # phantom 0 (unmeasured/no-transcript) into a provider's token cost.
+        toks = [r.eff_tokens for r in passed if r.measured]
+        # Failures by kind, so a run error / timeout is never read as a task loss.
+        failures: dict[str, int] = {}
+        for r in rs:
+            if r.skipped:
+                failures[r.status] = failures.get(r.status, 0) + 1
         out[prov] = {
             'tasks':         len(rs),
             'ran':           len(ran),
@@ -869,9 +965,11 @@ def summarize(results: list[RunResult]) -> dict:
             'passed':        len(passed),
             'success_rate':  (len(passed) / len(ran)) if ran else None,
             'mean_eff_tokens_passed': (sum(toks) / len(toks)) if toks else None,
-            # Variance across passed runs — meaningful only when repeats > 1.
-            'n_runs':        len(passed),
+            # Variance over the measured passed runs; meaningful when repeats > 1.
+            'n_runs':        len(toks),
+            'unmeasured':    len(passed) - len(toks),
             'eff_tokens_stdev': statistics.pstdev(toks) if len(toks) > 1 else 0.0,
+            'failures':      failures,
             'skip_reason':   next((r.reason for r in rs if r.skipped), ''),
         }
     return {'providers': out, 'results': [dataclasses.asdict(r) for r in results]}
@@ -900,11 +998,24 @@ def render_summary(summary: dict, *, baseline: str = 'baseline') -> str:
             vs = f"{delta:+.0%}"
         else:
             vs = '—'
+        note = ''
+        if s.get('unmeasured'):
+            note = f"   ⚠ {s['unmeasured']} passed run(s) unmeasured"
         lines.append(f"  {name:<14}{s['passed']:>4}/{s['ran']:<5}{rate:>10}"
-                     f"{tokstr:>14}{vs:>10}")
+                     f"{tokstr:>14}{vs:>10}{note}")
+    # Failure breakdown — so run errors / timeouts aren't misread as task losses.
+    fail_rows = []
+    for name, s in provs.items():
+        fails = s.get('failures') or {}
+        if fails:
+            fail_rows.append(f"  {name}: " + ', '.join(f'{k}×{v}' for k, v in fails.items()))
+    if fail_rows:
+        lines.append('')
+        lines.append('  Excluded (did not produce a verdict):')
+        lines.extend(fail_rows)
     lines.append('')
     lines.append('  Eff tokens = input + cache_write·1.25 + cache_read·0.10, '
-                 'averaged over passed runs only.')
+                 'averaged over passed + measured runs only.')
     lines.append('  Negative vs-base = cheaper at equal success. Compare only '
                  'providers that actually ran.')
     lines.append('')
@@ -983,6 +1094,14 @@ def render_leaderboard(result_files: list[str], *, baseline: str = 'baseline') -
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
+
+def _pkg_version() -> str:
+    try:
+        import cram
+        return cram.__version__
+    except Exception:
+        return 'unknown'
+
 
 def _make_runner(name: str) -> Runner:
     if name == 'claude':
@@ -1088,8 +1207,24 @@ def main() -> None:
     parser.add_argument('--leaderboard', metavar='GLOB', default=None,
                         help='render a markdown leaderboard from committed result '
                              'JSON files matching GLOB, then exit')
+    parser.add_argument('--clean-cache', action='store_true',
+                        help='delete the shared repo clone cache, then exit')
+    parser.add_argument('--keep-workdirs', action='store_true',
+                        help='keep per-run workdirs for debugging (default: clean '
+                             'an auto-created tempdir on success)')
+    parser.add_argument('--no-baseline', action='store_true',
+                        help='allow running without a baseline arm (not recommended '
+                             '— vs-baseline is the comparable metric)')
+    parser.add_argument('--model', default=None,
+                        help='model label recorded in result metadata '
+                             '(default: $CRAM_MODEL or "unknown")')
     parser.add_argument('--json', action='store_true', dest='as_json')
     args = parser.parse_args()
+
+    # ── Cache maintenance ────────────────────────────────────────────────────
+    if args.clean_cache:
+        print(f'Cleaned repo cache: {clean_repo_cache()}')
+        return
 
     # ── Leaderboard mode ────────────────────────────────────────────────────
     if args.leaderboard:
@@ -1123,8 +1258,12 @@ def main() -> None:
             parser.error(f'no tasks with tier {args.tier!r} in the corpus')
     if args.repeats < 1:
         parser.error('--repeats must be >= 1')
+    provider_names = [n.strip() for n in args.providers.split(',') if n.strip()]
+    if 'baseline' not in provider_names and not args.no_baseline:
+        parser.error("no 'baseline' arm in --providers; vs-baseline is the "
+                     "comparable metric. Add baseline, or pass --no-baseline.")
     try:
-        providers = [get_provider(n.strip()) for n in args.providers.split(',') if n.strip()]
+        providers = [get_provider(n) for n in provider_names]
     except KeyError as e:
         parser.error(str(e))
     providers = _configure_providers_for_runner(providers, args.runner)
@@ -1140,14 +1279,41 @@ def main() -> None:
                      f'without executing.')
 
     import tempfile
+    created_tmp = args.work_root is None
     work_root = args.work_root or tempfile.mkdtemp(prefix='cram-rig-')
     results = run_rig(corpus, providers, runner, CommandOracle(),
-                      work_root=work_root, repeats=args.repeats)
+                      work_root=work_root, repeats=args.repeats,
+                      progress=not args.as_json)
     summary = summarize(results)
+
+    # Self-describing metadata so committed results are comparable + leaderboard-ready.
+    import platform
+    import datetime as _dt
+    summary = {
+        'meta': {
+            'name':         os.path.splitext(os.path.basename(args.corpus))[0],
+            'model':        args.model or os.environ.get('CRAM_MODEL', 'unknown'),
+            'runner':       args.runner,
+            'cram_version': _pkg_version(),
+            'repeats':      args.repeats,
+            'providers':    provider_names,
+            'date':         _dt.date.today().isoformat(),
+            'machine':      platform.node(),
+        },
+        **summary,
+    }
     if args.as_json:
         print(json.dumps(summary, indent=2))
     else:
         print(render_summary(summary))
+
+    # Workdir hygiene: keep on request or if any cell errored (debugging);
+    # otherwise clean an auto-created tempdir so /tmp doesn't accumulate.
+    errored = any(r.status not in _COUNTED_STATUSES for r in results)
+    if created_tmp and not args.keep_workdirs and not errored:
+        shutil.rmtree(work_root, ignore_errors=True)
+    else:
+        print(f'  workdirs: {work_root}', file=sys.stderr)
 
 
 if __name__ == '__main__':

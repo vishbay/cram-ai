@@ -32,3 +32,4 @@ examples/rig/**/.pytest_cache/
 .codex/config.toml
 .codex/hooks.json
 CLAUDE.md
+AGENTS.md

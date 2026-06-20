@@ -20,10 +20,18 @@ HIGH_ORIENTATION_PCT = 0.25   # measured pre-edit share of input-side spend
 RETRY_LOOP_ERRORS    = 1.0    # avg failed tool calls per session
 EDIT_CHURN_LIMIT     = 2.0    # avg same-file re-edits per session
 CONTEXT_GROWTH_LIMIT = 5.0    # peak/start context ratio
+# Below this many measured sessions a finding is tagged `preliminary` — fired so
+# a real signal isn't hidden, but flagged so it's not read as gospel off N=1.
+MIN_SAMPLE = 3
 
 
 def derive_findings(data: dict) -> list[dict]:
-    """Return findings for a collect_audit aggregate dict (possibly empty)."""
+    """Return findings for a collect_audit aggregate dict (possibly empty).
+
+    Each finding carries `sample_n` (the measured sessions it rests on) and
+    `preliminary` (True when sample_n < MIN_SAMPLE) so a warning off one or two
+    sessions reads as a hint, not a verdict.
+    """
     findings: list[dict] = []
     total = data['sessions']
 
@@ -35,6 +43,7 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'repeated-reads',
             'severity': 'warn',
+            'sample_n': total,
             'evidence': f"{fp} read {r}× across {n} sessions{more}",
             'fix': 'Summarize these files into a repo briefing '
                    '(CLAUDE.md / cram task) so agents stop re-reading them.',
@@ -46,6 +55,7 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'high-orientation',
             'severity': 'warn',
+            'sample_n': data['pre_edit_measured_sessions'],
             'evidence': f"{pct:.0%} of input-side spend lands before the first "
                         f"edit ({data['pre_edit_measured_sessions']} sessions measured)",
             'fix': 'Front-load repo context (architecture summary, briefing) '
@@ -58,6 +68,7 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'oversized-results',
             'severity': 'warn',
+            'sample_n': data['sessions_with_big_results'],
             'evidence': f"{data['sessions_with_big_results']}/{total} sessions "
                         f"carried a tool result > {kb} KB "
                         f"(~${data['carried_cost_per_session']:.4f}/session in re-reads)",
@@ -70,6 +81,7 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'cache-blind',
             'severity': 'warn',
+            'sample_n': data['cache_blind_sessions'],
             'evidence': f"{data['cache_blind_sessions']}/{total} sessions wrote "
                         f"prompt cache but never read it",
             'fix': 'Check prompt caching: unstable or sub-minimum prefixes pay '
@@ -81,6 +93,7 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'retry-loops',
             'severity': 'warn',
+            'sample_n': total,
             'evidence': f"{data['avg_error_results']:.1f} failed tool calls/session "
                         f"({data['sessions_with_errors']}/{total} sessions had failures)",
             'fix': 'Capture the failing commands as gotchas/recipes so agents '
@@ -92,6 +105,7 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'edit-churn',
             'severity': 'warn',
+            'sample_n': total,
             'evidence': f"{data['avg_edit_churn']:.1f} same-file re-edits/session",
             'fix': 'Sustained churn means thrashing — tighten the task brief or '
                    'add the relevant invariants/tests to context.',
@@ -103,10 +117,18 @@ def derive_findings(data: dict) -> list[dict]:
         findings.append({
             'id': 'context-bloat',
             'severity': 'warn',
+            'sample_n': data['context_growth_measured'],
             'evidence': f"context grows {growth:.1f}× from session start to peak "
                         f"({data['context_growth_measured']} sessions measured)",
             'fix': 'Heavy growth usually means accumulated tool output — trim '
                    'results, or tune compaction before the window fills.',
         })
+
+    # Tag low-sample findings as preliminary (fired, but not gospel off small N).
+    for f in findings:
+        n = f.get('sample_n')
+        f['preliminary'] = n is not None and n < MIN_SAMPLE
+        if f['preliminary']:
+            f['evidence'] += f" — preliminary ({n} session{'' if n == 1 else 's'})"
 
     return attach_recommendations(findings)

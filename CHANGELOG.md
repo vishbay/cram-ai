@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format is based on
   counted toward success but its tokens are **not** averaged in as a phantom 0.
 
 ### Added
+- `cram audit`: a **versioned, stable JSON contract** — every `--json` document (aggregate,
+  `--session`, `--layer`, `--compare`) carries `schema_version` (`audit/1`), the aggregate
+  top-level key set is stable (null, not omitted), and a `bases` map marks each headline cost
+  metric measured/estimated. Documented in `docs/AUDIT_JSON.md`.
+- `cram audit` findings now carry `sample_n` + `preliminary`; a finding based on fewer than 3
+  measured sessions is tagged preliminary (fired, but not read as a verdict off N=1).
 - `cram rig`: live per-cell progress on stderr; self-describing `meta` (model/runner/version/…)
   auto-embedded in `--json`; `--clean-cache`, `--keep-workdirs`, `--model`, and `--no-baseline`
   flags; a required-baseline guard; one clone retry on transient failure. `summarize()` now

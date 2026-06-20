@@ -54,14 +54,16 @@ class Optimizer:
 _OPTIMIZER_LIST: tuple[Optimizer, ...] = (
     Optimizer(
         id='cram-context-layer',
-        title="cram's repo/task context layer",
+        title="cram's repo/task context layer (experimental — verify, don't assume)",
         kind='cram',
         addresses=('orientation',),
         wiring='Run `cram init`, fill DECISIONS.md/GOTCHAS.md, and wire the MCP '
                'server so the agent calls get_context() at session start.',
-        verify='Re-audit: repeated cross-session reads and pre-edit context '
-               'share should drop. cram detects get_context() calls in the '
-               'transcript and A/Bs sessions with the layer on vs off.',
+        verify='One remediation among several, NOT a guaranteed win: the case '
+               'study found it helped a localized bug but was neutral-to-negative '
+               'elsewhere. Prove it on your repo with `cram rig` or '
+               '`cram audit --compare` before relying on it — repeated reads and '
+               'pre-edit share should drop at equal task success.',
         # Generalizes the existing context-mode ctx_* detection to cram's own
         # MCP tool — this is the signature the verify loop will match.
         detector={'kind': 'mcp_tool', 'match': 'get_context'},

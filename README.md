@@ -733,7 +733,7 @@ and `cram task` can send repo summaries or code excerpts to your configured cont
 | `cram decide "..."` | Add a decision |
 | `cram gotcha "..."` | Add a gotcha |
 | `cram decisions --mine` | Mine git history for decision candidates |
-| `cram benchmark` | Estimate token savings vs full-repo auto-indexing |
+| `cram benchmark` | Model the cache-write cost of delivering repo context |
 | `cram rig ...` | Verify optimizers |
 | `cram mcp` | Start the MCP server |
 | `cram hook install\|uninstall` | Manage the git post-commit sync hook |

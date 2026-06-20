@@ -421,10 +421,10 @@ def add_file(path: str, identifiers: str = '') -> str:
 
 @mcp.tool()
 def run_benchmark() -> str:
-    """Show token savings for this repo — full repo vs cram context, with cost breakdown.
+    """Model the cache-write cost of delivering repo context — full repo vs cram context.
 
-    Returns a summary of how many tokens cram-ai saves per session and the
-    estimated cost reduction at Sonnet and Opus rates.
+    A delivery-cost model (cache-write tokens at Sonnet/Opus rates), not a proof of
+    savings — whether the context layer actually helps is what `cram rig` measures.
     """
     if not _repo_root:
         return 'Error: repo root not configured.'

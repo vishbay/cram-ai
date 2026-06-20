@@ -23,3 +23,12 @@ cram-audit-report.html
 examples/rig/**/__pycache__/
 examples/rig/**/*.pyc
 examples/rig/**/.pytest_cache/
+
+# Machine-specific dogfooding configs (contain local absolute paths) — not shipped.
+# Generated/edited per-developer; keep out of the public repo.
+.mcp.json
+.claude/settings.json
+.claude/docs.yml
+.codex/config.toml
+.codex/hooks.json
+CLAUDE.md

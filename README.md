@@ -147,7 +147,7 @@ re-discovery or when you have durable human knowledge to share with agents; veri
 ## Evidence so far
 
 The repo includes a reproducible case study against `pallets/click`; see
-[CASE_STUDY.md](CASE_STUDY.md) and [CASE_STUDY_RUNBOOK.md](CASE_STUDY_RUNBOOK.md).
+[CASE_STUDY.md](CASE_STUDY.md) and [docs/CASE_STUDY_RUNBOOK.md](docs/CASE_STUDY_RUNBOOK.md).
 
 The useful result is not "cram context always saves tokens." It does not. The useful result is
 that cram can show exactly when an optimization helped, did nothing, or made the run worse.

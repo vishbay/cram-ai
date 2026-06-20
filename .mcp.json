@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "cram-ai": {
-      "command": "/Users/vishbay/cram-ai/.venv/bin/cram",
-      "args": ["mcp", "--repo", "/Users/vishbay/cram-ai"]
-    }
-  }
-}

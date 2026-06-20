@@ -7,7 +7,7 @@ context layer reduces that waste **at equal task success**.
 > **This is a case study, not proof.** Single repo, two issues, small N,
 > descriptive. It demonstrates the *profiler* (where tokens go) and the
 > *referee* (did a fix help), with caveats kept honest. See
-> [CASE_STUDY_RUNBOOK.md](CASE_STUDY_RUNBOOK.md) for the method.
+> [docs/CASE_STUDY_RUNBOOK.md](docs/CASE_STUDY_RUNBOOK.md) for the method.
 
 ## Setup (pinned)
 - **Repo:** `pallets/click` @ `8a1b1a33d739be05b7e91251e3c0dde77c5e152f`

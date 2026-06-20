@@ -495,3 +495,80 @@ class TestObserve:
         obs = rig.observe_optimizer(str(tmp_path), 'claude-context', days=3650)
         out = rig.render_observation(obs, 'claude-context')
         assert 'Observational A/B' in out and 'claude-context' in out
+
+
+# ── Failure taxonomy + measurement honesty (correctness fixes) ────────────────
+
+class _RaisingAdapter:
+    """Provider whose setup() raises — to exercise the setup_error path."""
+    name = 'boom'
+
+    def __init__(self, where):
+        self.where = where
+
+    def availability(self):
+        return rig.Availability(True)
+
+    def setup(self, task, workdir):
+        raise RuntimeError(self.where)
+
+
+def _ok_task():
+    return rig.Task('t', 'p')   # no check → oracle always passes
+
+
+def test_setup_error_status(tmp_path):
+    runner = rig.MockRunner(lambda t, s, w: None)
+    results = rig.run_rig([_ok_task()], [_RaisingAdapter('kaboom')], runner,
+                          rig.CommandOracle(), work_root=str(tmp_path))
+    r = results[0]
+    assert r.status == 'setup_error' and r.skipped and not r.measured
+    assert 'kaboom' in r.reason
+
+
+def test_run_error_status(tmp_path):
+    def boom(task, setup, workdir):
+        raise RuntimeError('runner exploded')
+    results = rig.run_rig([_ok_task()], [rig.BaselineAdapter()], rig.MockRunner(boom),
+                          rig.CommandOracle(), work_root=str(tmp_path))
+    assert results[0].status == 'run_error' and results[0].skipped
+
+
+def test_no_transcript_is_counted_but_unmeasured(tmp_path):
+    # Runner returns no transcript; oracle passes (no check). The verdict counts
+    # toward success rate, but tokens must NOT be averaged as a phantom 0.
+    results = rig.run_rig([_ok_task()], [rig.BaselineAdapter()],
+                          rig.MockRunner(lambda t, s, w: None),
+                          rig.CommandOracle(), work_root=str(tmp_path))
+    r = results[0]
+    assert r.status == 'no_transcript' and r.success and not r.measured
+    assert not r.skipped                              # it produced a verdict
+    s = rig.summarize(results)['providers']['baseline']
+    assert s['ran'] == 1 and s['passed'] == 1
+    assert s['success_rate'] == 1.0
+    assert s['mean_eff_tokens_passed'] is None        # nothing measurable
+    assert s['unmeasured'] == 1 and s['n_runs'] == 0
+
+
+def test_oracle_timeout_raises_and_is_recorded(tmp_path):
+    import sys as _sys
+    slow = rig.Task('t', 'p', check=[_sys.executable, '-c', 'import time; time.sleep(5)'])
+    with pytest.raises(rig.OracleTimeout):
+        rig.CommandOracle(timeout=1).score(slow, str(tmp_path))
+    results = rig.run_rig([slow], [rig.BaselineAdapter()],
+                          rig.MockRunner(lambda t, s, w: None),
+                          rig.CommandOracle(timeout=1), work_root=str(tmp_path))
+    assert results[0].status == 'oracle_timeout' and results[0].skipped
+
+
+def test_summarize_failures_breakdown(tmp_path):
+    results = rig.run_rig([_ok_task()], [_RaisingAdapter('x')],
+                          rig.MockRunner(lambda t, s, w: None),
+                          rig.CommandOracle(), work_root=str(tmp_path))
+    s = rig.summarize(results)['providers']['boom']
+    assert s['failures'] == {'setup_error': 1} and s['ran'] == 0
+
+
+def test_clean_repo_cache_returns_path():
+    p = rig.clean_repo_cache()
+    assert p.endswith('cram-rig-repocache')

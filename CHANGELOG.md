@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- `cram rig` no longer silently miscounts failures. Each cell now records a precise status
+  (`ran` / `no_transcript` / `unavailable` / `setup_error` / `run_error` / `oracle_timeout`):
+  a runner crash, a workdir/clone error, and an oracle **timeout** are excluded from the success
+  rate instead of being read as a task loss; a passing run with no measurable transcript is
+  counted toward success but its tokens are **not** averaged in as a phantom 0.
+
+### Added
+- `cram rig`: live per-cell progress on stderr; self-describing `meta` (model/runner/version/…)
+  auto-embedded in `--json`; `--clean-cache`, `--keep-workdirs`, `--model`, and `--no-baseline`
+  flags; a required-baseline guard; one clone retry on transient failure. `summarize()` now
+  reports a per-provider `failures` breakdown and `unmeasured` count.
+
 ## [0.8.3] — 2026-06-20
 
 Open-source-reveal hygiene release.

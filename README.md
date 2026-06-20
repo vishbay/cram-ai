@@ -356,12 +356,19 @@ cram rig <corpus.json> --dry-run
 cram rig <corpus.json> --runner codex
 cram rig --observe cram --days 30
 cram rig --leaderboard 'examples/rig/bench/results/*.json'
+cram rig --clean-cache                              # drop the shared clone cache
 ```
 
 A self-contained, tiered benchmark ships in [`examples/rig/bench/`](examples/rig/bench) —
 `cram-bench-v1`, small/medium/large tasks that ship red, no external repo to clone. Run it,
-commit the result JSON, and render a ranked leaderboard with `--leaderboard`. `--repeats N`
-runs each cell N times so the summary reports variance.
+commit the result JSON (it carries self-describing `meta` — model, runner, version), and render
+a ranked leaderboard with `--leaderboard`. `--repeats N` runs each cell N times so the summary
+reports variance.
+
+The referee is honest about its own failure modes: each cell records a precise status, so a
+run error, an oracle timeout, or a missing transcript is **excluded** from the success rate
+rather than miscounted as a task loss or a 0-token "win". A baseline arm is required (pass
+`--no-baseline` to override); `--keep-workdirs` retains per-run dirs for debugging.
 
 Modes:
 

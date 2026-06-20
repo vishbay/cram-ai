@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-06-20
+
+Open-source-reveal hygiene release.
+
+### Changed
+- Removed the maintainer email from package metadata and docs — all contributor contact now
+  goes through GitHub (private vulnerability reporting, issues, discussions). This release scrubs
+  the email from the PyPI project page (0.8.2's metadata still showed it).
+- README restructured so the core (audit + referee) leads and the context layer is grouped under
+  an explicit "Optional" divider; "Evidence so far" trimmed to a summary linking the case study.
+- `action.yml` default `cram-version` → 0.8.3.
+
+### Removed
+- Untracked machine-specific dogfooding configs that carried local absolute paths (`.mcp.json`,
+  `.claude/settings.json`, `.claude/docs.yml`, `.codex/config.toml`, `.codex/hooks.json`,
+  `CLAUDE.md`, `AGENTS.md`) and the internal `PLAN_CARRIED_OUTPUT.md`; moved `CASE_STUDY_RUNBOOK.md`
+  under `docs/`. No tracked file contains a local absolute path.
+
 ## [0.8.2] — 2026-06-19
 
 The "referee" release: `cram rig` becomes a reproducible, gamified, third-party-capable
@@ -106,7 +124,8 @@ benchmark — and the case study reports cram's own context layer honestly (incl
 ### Added
 - Audit-first repositioning: see where your agent tokens go.
 
-[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/vishbay/cram-ai/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/vishbay/cram-ai/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/vishbay/cram-ai/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/vishbay/cram-ai/compare/v0.7.0...v0.8.0

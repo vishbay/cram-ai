@@ -146,74 +146,22 @@ re-discovery or when you have durable human knowledge to share with agents; veri
 
 ## Evidence so far
 
-The repo includes a reproducible case study against `pallets/click`; see
-[CASE_STUDY.md](CASE_STUDY.md) and [docs/CASE_STUDY_RUNBOOK.md](docs/CASE_STUDY_RUNBOOK.md).
+cram ships a reproducible case study against `pallets/click` — full per-session tables in
+[CASE_STUDY.md](CASE_STUDY.md), method in [docs/CASE_STUDY_RUNBOOK.md](docs/CASE_STUDY_RUNBOOK.md).
 
-The useful result is not "cram context always saves tokens." It does not. The useful result is
-that cram can show exactly when an optimization helped, did nothing, or made the run worse.
+The honest result is **not** "cram context always saves tokens" — it doesn't. The result is that
+cram shows **exactly when** an optimization helped, did nothing, or made the run worse. Across the
+runs measured, the auto-generated context layer helped on **one** localized Claude bug (−44%
+requests at 3/3 success) and was **neutral-to-negative everywhere else** — including a controlled
+`cram rig` run where it "saved" tokens but failed more of the task, and so **lost on pass rate**,
+which comes first. (The manual `DECISIONS.md` / `GOTCHAS.md` knowledge path is a separate, still
+untested claim.)
 
-One Claude Code case-study arm on a localized Click bug showed less re-discovery at equal task
-success:
-
-| Metric | No cram | cram context | Change |
-|---|---:|---:|---:|
-| Requests/session | 21.3 | 12.0 | -44% |
-| Re-reads of target file | about 5x | about 2x | -60% |
-| First edit | turn 5 | turn 3 | sooner |
-| Peak context | 32,549 | 29,253 | -10% |
-| Startup context | 18,180 | 20,904 | +2,724 |
-| Task success | 3/3 | 3/3 | unchanged |
-
-But the same context layer did **not** help elsewhere — measured the same way (per-session
-`cram audit`, same pinned commit, equal-ish task success):
-
-**Claude, central-hub bug (#2786):** the fix spans click's 3k-line `core.py`, so pre-loaded
-*excerpts* didn't substitute for reading the hub. Re-reads stayed flat (~14×→~13×) and peak
-context rose (+10%). Net neutral-to-negative.
-
-**Codex (N=1 per cell, directional):** Codex reads go through shell, so compare orientation and
-context only. The context layer showed no orientation benefit on any cell tested:
-
-| Cell | Reads before first edit | Peak context |
-|---|---|---|
-| #3571 localized | 6 → 8 | 50,785 → 56,481 |
-| #2786 explicit | 33 → 39 | 150,990 → 128,030 |
-| #2786 natural | 26 → 28 | 146,227 → 138,722 |
-
-**Codex, controlled rig (oracle-backed, reproducible):** `cram rig --runner codex` on the
-#2786 corpus, 3 reps per arm, comparing tokens only among runs that pass the success oracle:
-
-| Arm | Pass rate | Passing-run eff. tokens |
-|---|---|---|
-| baseline | 2/3 | 2.87M, 1.70M |
-| cram | 1/3 | 2.74M |
-
-The one passing cram run was marginally cheaper than the comparable baseline run — but cram
-**failed 2 of 3 runs vs the baseline's 1**, so it loses on the metric that comes first: pass
-rate. A token saving that costs you task success is not a win. Reproduce with
-`cram rig corpus-click-2786.json --runner codex`.
-
-So the generated repo briefing / auto-excerpts should **not** be pitched as a universal token
-reducer: it helped one localized Claude case and was neutral-to-negative everywhere else
-measured. The manual `DECISIONS.md` / `GOTCHAS.md` path — humans recording non-greppable
-project knowledge — is a **separate, still-untested** claim. Full per-session numbers, including
-these, are in [CASE_STUDY.md](CASE_STUDY.md).
-
-The context layer is most plausible for:
-
-- unfamiliar repos
-- natural-language bug reports where the exact file is not obvious
-- long-running or autonomous agent loops
-- repeated work in the same codebase
-- multi-agent fan-out where every agent would otherwise rediscover the same context
-- tacit project knowledge that cannot be inferred from syntax
-
-It is weaker, and sometimes neutral or negative, for:
-
-- tiny one-file edits
-- prompts that already name the exact file and test
-- familiar code where the agent needs little orientation
-- stale context that has not been maintained
+**Bottom line:** lead with the **audit + referee**; treat the context layer as optional and
+unproven for auto-orientation. It's most plausible on unfamiliar repos, natural-language bug
+reports where the file isn't obvious, and long-running / repeated / multi-agent loops — and
+weakest on tiny edits or prompts that already name the file. The numbers behind all of this,
+including the losses, are in [CASE_STUDY.md](CASE_STUDY.md).
 
 ---
 
@@ -390,6 +338,138 @@ to the exact files/sessions causing it. Add `--json` for structured output.
 
 ---
 
+## Verify optimizers with `cram rig`
+
+`cram rig` is the referee. It compares token usage only among runs that still pass a success
+oracle.
+
+![cram rig referee demo](docs/img/referee-demo.gif)
+
+An "optimization" that saves tokens by failing the task is not a win — the referee reports
+tokens **at fixed success**, so a cheap-but-broken arm is never credited. (Reproduce the clip
+above with `python scripts/demo/referee_demo.py`.)
+
+```bash
+cram rig <corpus.json> --providers baseline,cram,claude-context
+cram rig <corpus.json> --repeats 3 --tier small   # N runs/cell, one tier
+cram rig <corpus.json> --dry-run
+cram rig <corpus.json> --runner codex
+cram rig --observe cram --days 30
+cram rig --leaderboard 'examples/rig/bench/results/*.json'
+```
+
+A self-contained, tiered benchmark ships in [`examples/rig/bench/`](examples/rig/bench) —
+`cram-bench-v1`, small/medium/large tasks that ship red, no external repo to clone. Run it,
+commit the result JSON, and render a ranked leaderboard with `--leaderboard`. `--repeats N`
+runs each cell N times so the summary reports variance.
+
+Modes:
+
+| Mode | What it means |
+|---|---|
+| Controlled | fixed corpus, fixture repo, success command, token comparison at equal success |
+| Observational | split real sessions by whether the optimizer was used; useful signal, not proof |
+
+Providers:
+
+| Provider | Status |
+|---|---|
+| `baseline` | no optimizer |
+| `cram` | cram context layer |
+| `claude-context` | third-party semantic code-search MCP |
+| `headroom`, `context-mode` | stubs that report what wiring is missing |
+
+Runners (controlled mode — pick with `--runner`):
+
+| Runner | Agent | Notes |
+|---|---|---|
+| `claude` (default) | Claude Code headless (`claude -p`) | reuses your Claude login |
+| `codex` | Codex noninteractive (`codex exec`) | reuses your Codex login; routes the `cram` provider through `AGENTS.md` |
+
+Both reuse the existing CLI login (no API key). More agent runners can be added behind the same
+corpus/oracle interface.
+
+---
+
+## HTML report
+
+```bash
+cram audit --report-html        # writes ./cram-audit-report.html and opens it
+cram audit --report-html FILE   # write to a specific path
+cram audit --report-html --no-open
+```
+
+A single self-contained HTML file — inline CSS/JS, no external fonts or fetches — so it
+travels: open it locally, attach it to a PR, drop it in Slack. A restrained dark data
+dashboard (think Grafana / GitHub Actions logs, not a frosted-glass AI console) with a
+light/dark toggle. It renders:
+
+- a KPI **stat strip** and the pre-edit **headline**
+- **coverage & confidence** (sessions found / measured / excluded / parse failures, source mix, measured·estimated·count legend)
+- the **token waterfall** with per-component `$`/session
+- **retry loops** — the same command failing repeatedly
+- **cost by waste layer** ($-ranked, with basis)
+- the **session leaderboard** with expandable per-turn drilldowns (carried results, failed commands)
+- **waste layers** with collapsible top-contributor lists
+- **findings** with fix → verify
+- **context on/off** A/B when the window contains both
+- **key metrics**
+
+It's built from the same `collect_audit()` data as `cram audit --report`, so it makes no
+claim the text report doesn't.
+
+![cram audit HTML report — light](docs/img/report-light.png)
+
+---
+
+## Continuous integration (GitHub Action)
+
+cram ships a GitHub Action that turns an audit into a **sticky pull-request comment** and can
+**gate** a PR on the rig referee. Because agent transcripts never exist in a stock CI runner,
+the action consumes committed/uploaded JSON (produced by `cram audit --json` /
+`cram audit --compare A B --json` / `cram rig --json`) rather than live transcripts.
+
+```yaml
+# .github/workflows/cram-audit.yml
+name: cram audit
+on: pull_request
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vishbay/cram-ai@v1
+        with:
+          mode: compare              # compare | report | rig
+          file-a: .cram/baseline.json
+          file-b: .cram/candidate.json
+```
+
+| Mode | Input | Effect |
+|---|---|---|
+| `compare` | two audit JSONs | posts a token-waste delta table |
+| `report` | one `cram audit --json` | posts the markdown audit report |
+| `rig` | baseline + candidate `cram rig --json` | **fails the check** if candidate success drops more than `tolerance` |
+
+`cram init --team` drops a starter `cram-audit.yml` (and `cram-sync.yml`) into
+`.github/workflows/`. On fork PRs where commenting is blocked, the action falls back to the job
+summary. The action is key-free.
+
+---
+
+## Optional: the context layer
+
+Everything above is the core of cram — the **profiler** (`cram audit`) and the **referee**
+(`cram rig`), both local and proven on real transcripts. The sections below are an **optional**
+add-on: a small repo-context layer cram can maintain and deliver to your agent. It is useful
+when audits show repeated re-discovery, but it is **experimental as a token-saving mechanism**
+— verify it with `cram rig` or `cram audit --compare` before relying on it (see the case study).
+
+---
+
 ## Context layer
 
 The context layer is **optional and experimental as an optimizer**. It is one remediation
@@ -428,23 +508,6 @@ When `get_context("task")` or `cram task "task"` runs, cram:
 The goal is not to prevent the agent from reading files. The goal is to reduce blind
 re-discovery and preload durable project knowledge. Treat the generated briefing and excerpts
 as a candidate fix, not a guaranteed savings layer.
-
----
-
-## Concurrency and team
-
-These are two different things; cram supports one today and not the other.
-
-- **Concurrent agents on one repo — supported now.** Each `get_context("task")` / `cram task`
-  call writes its own slot file under `.ai-context/tasks/<task>.md`, so multiple agents working
-  the same repo at once never overwrite each other's task context. The shared files
-  (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.md`) are read-mostly and committed,
-  so teammates get the same context layer through normal version control.
-- **Hosted, multi-developer "team" features — not built yet.** Shared dashboards and
-  cross-developer audit rollups may come later around the open core. Today cram runs on a
-  single developer's machine.
-
-In short: concurrent agents, yes; centralized team analytics, not yet.
 
 ---
 
@@ -525,94 +588,58 @@ carry huge shell output through the rest of a session.
 
 ---
 
-## Verify optimizers with `cram rig`
+## Concurrency and team
 
-`cram rig` is the referee. It compares token usage only among runs that still pass a success
-oracle.
+These are two different things; cram supports one today and not the other.
 
-![cram rig referee demo](docs/img/referee-demo.gif)
+- **Concurrent agents on one repo — supported now.** Each `get_context("task")` / `cram task`
+  call writes its own slot file under `.ai-context/tasks/<task>.md`, so multiple agents working
+  the same repo at once never overwrite each other's task context. The shared files
+  (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.md`) are read-mostly and committed,
+  so teammates get the same context layer through normal version control.
+- **Hosted, multi-developer "team" features — not built yet.** Shared dashboards and
+  cross-developer audit rollups may come later around the open core. Today cram runs on a
+  single developer's machine.
 
-An "optimization" that saves tokens by failing the task is not a win — the referee reports
-tokens **at fixed success**, so a cheap-but-broken arm is never credited. (Reproduce the clip
-above with `python scripts/demo/referee_demo.py`.)
-
-```bash
-cram rig <corpus.json> --providers baseline,cram,claude-context
-cram rig <corpus.json> --repeats 3 --tier small   # N runs/cell, one tier
-cram rig <corpus.json> --dry-run
-cram rig <corpus.json> --runner codex
-cram rig --observe cram --days 30
-cram rig --leaderboard 'examples/rig/bench/results/*.json'
-```
-
-A self-contained, tiered benchmark ships in [`examples/rig/bench/`](examples/rig/bench) —
-`cram-bench-v1`, small/medium/large tasks that ship red, no external repo to clone. Run it,
-commit the result JSON, and render a ranked leaderboard with `--leaderboard`. `--repeats N`
-runs each cell N times so the summary reports variance.
-
-Modes:
-
-| Mode | What it means |
-|---|---|
-| Controlled | fixed corpus, fixture repo, success command, token comparison at equal success |
-| Observational | split real sessions by whether the optimizer was used; useful signal, not proof |
-
-Providers:
-
-| Provider | Status |
-|---|---|
-| `baseline` | no optimizer |
-| `cram` | cram context layer |
-| `claude-context` | third-party semantic code-search MCP |
-| `headroom`, `context-mode` | stubs that report what wiring is missing |
-
-Runners (controlled mode — pick with `--runner`):
-
-| Runner | Agent | Notes |
-|---|---|---|
-| `claude` (default) | Claude Code headless (`claude -p`) | reuses your Claude login |
-| `codex` | Codex noninteractive (`codex exec`) | reuses your Codex login; routes the `cram` provider through `AGENTS.md` |
-
-Both reuse the existing CLI login (no API key). More agent runners can be added behind the same
-corpus/oracle interface.
+In short: concurrent agents, yes; centralized team analytics, not yet.
 
 ---
 
-## Continuous integration (GitHub Action)
+## Context health
 
-cram ships a GitHub Action that turns an audit into a **sticky pull-request comment** and can
-**gate** a PR on the rig referee. Because agent transcripts never exist in a stock CI runner,
-the action consumes committed/uploaded JSON (produced by `cram audit --json` /
-`cram audit --compare A B --json` / `cram rig --json`) rather than live transcripts.
+Context can go stale. cram tracks this with a 0-10 staleness score based on commits since the
+generated context was last refreshed, mapped to a band:
 
-```yaml
-# .github/workflows/cram-audit.yml
-name: cram audit
-on: pull_request
-jobs:
-  audit:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: vishbay/cram-ai@v1
-        with:
-          mode: compare              # compare | report | rig
-          file-a: .cram/baseline.json
-          file-b: .cram/candidate.json
+| Score | Band | Meaning |
+|---:|---|---|
+| 0-2 | fresh | context tracks the code |
+| 3-5 | acceptable | minor drift |
+| 6-7 | stale | refresh recommended (`cram sync`) |
+| 8-10 | critical | likely misleading; refresh before relying on it |
+
+Only commits that change repo *structure* count against `ARCHITECTURE.md`: a content-only
+commit leaves it fresh by design, so the score does not creep on every commit.
+
+```bash
+cram status
+cram sync
 ```
 
-| Mode | Input | Effect |
-|---|---|---|
-| `compare` | two audit JSONs | posts a token-waste delta table |
-| `report` | one `cram audit --json` | posts the markdown audit report |
-| `rig` | baseline + candidate `cram rig --json` | **fails the check** if candidate success drops more than `tolerance` |
+Health surfaces in:
 
-`cram init --team` drops a starter `cram-audit.yml` (and `cram-sync.yml`) into
-`.github/workflows/`. On fork PRs where commenting is blocked, the action falls back to the job
-summary. The action is key-free.
+- `cram status`
+- `get_health()`
+- `get_context()` warnings when context is stale or critical
+
+Soft budgets warn but do not truncate:
+
+| File | Default budget | Override |
+|---|---:|---|
+| `ARCHITECTURE.md` | 3,000 tok | `CRAM_BUDGET_ARCHITECTURE` |
+| `DECISIONS.md` | 1,800 tok | `CRAM_BUDGET_DECISIONS` |
+| `GOTCHAS.md` | 800 tok | `CRAM_BUDGET_GOTCHAS` |
+| `CURRENT_TASK.md` | 2,000 tok | `CRAM_BUDGET_TASK` |
+| `SYMBOLS.md` | none | scales with repo size |
 
 ---
 
@@ -677,75 +704,6 @@ For enterprise gateways:
 
 Privacy note: `cram audit` stays local. `cram init`, `cram sync`, `cram decisions --mine`,
 and `cram task` can send repo summaries or code excerpts to your configured context model.
-
----
-
-## Context health
-
-Context can go stale. cram tracks this with a 0-10 staleness score based on commits since the
-generated context was last refreshed, mapped to a band:
-
-| Score | Band | Meaning |
-|---:|---|---|
-| 0-2 | fresh | context tracks the code |
-| 3-5 | acceptable | minor drift |
-| 6-7 | stale | refresh recommended (`cram sync`) |
-| 8-10 | critical | likely misleading; refresh before relying on it |
-
-Only commits that change repo *structure* count against `ARCHITECTURE.md`: a content-only
-commit leaves it fresh by design, so the score does not creep on every commit.
-
-```bash
-cram status
-cram sync
-```
-
-Health surfaces in:
-
-- `cram status`
-- `get_health()`
-- `get_context()` warnings when context is stale or critical
-
-Soft budgets warn but do not truncate:
-
-| File | Default budget | Override |
-|---|---:|---|
-| `ARCHITECTURE.md` | 3,000 tok | `CRAM_BUDGET_ARCHITECTURE` |
-| `DECISIONS.md` | 1,800 tok | `CRAM_BUDGET_DECISIONS` |
-| `GOTCHAS.md` | 800 tok | `CRAM_BUDGET_GOTCHAS` |
-| `CURRENT_TASK.md` | 2,000 tok | `CRAM_BUDGET_TASK` |
-| `SYMBOLS.md` | none | scales with repo size |
-
----
-
-## HTML report
-
-```bash
-cram audit --report-html        # writes ./cram-audit-report.html and opens it
-cram audit --report-html FILE   # write to a specific path
-cram audit --report-html --no-open
-```
-
-A single self-contained HTML file — inline CSS/JS, no external fonts or fetches — so it
-travels: open it locally, attach it to a PR, drop it in Slack. A restrained dark data
-dashboard (think Grafana / GitHub Actions logs, not a frosted-glass AI console) with a
-light/dark toggle. It renders:
-
-- a KPI **stat strip** and the pre-edit **headline**
-- **coverage & confidence** (sessions found / measured / excluded / parse failures, source mix, measured·estimated·count legend)
-- the **token waterfall** with per-component `$`/session
-- **retry loops** — the same command failing repeatedly
-- **cost by waste layer** ($-ranked, with basis)
-- the **session leaderboard** with expandable per-turn drilldowns (carried results, failed commands)
-- **waste layers** with collapsible top-contributor lists
-- **findings** with fix → verify
-- **context on/off** A/B when the window contains both
-- **key metrics**
-
-It's built from the same `collect_audit()` data as `cram audit --report`, so it makes no
-claim the text report doesn't.
-
-![cram audit HTML report — light](docs/img/report-light.png)
 
 ---
 

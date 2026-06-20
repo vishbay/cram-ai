@@ -36,6 +36,14 @@ class TestUsage:
         assert code == 0
         assert 'Usage: cram' in capsys.readouterr().out
 
+    def test_usage_groups_core_vs_optional_context(self, monkeypatch, capsys):
+        _run(monkeypatch, ['--help'])
+        out = capsys.readouterr().out
+        assert 'Profile & referee' in out
+        assert 'Optional — context layer' in out
+        # audit/rig listed above the context-layer commands (task/mcp).
+        assert out.index('rig') < out.index('Optional — context layer') < out.index('mcp')
+
     def test_unknown_command_errors(self, monkeypatch, capsys):
         code = _run(monkeypatch, ['bogus'])
         assert code == 1

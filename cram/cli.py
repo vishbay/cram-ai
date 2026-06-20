@@ -6,22 +6,26 @@ import sys
 USAGE = """\
 Usage: cram <command> [args]
 
-Commands:
-  init        [path] [--team]              One-time repo setup (--team adds GitHub Actions CI)
-  task        "<description>" [--target T] Populate CURRENT_TASK.md and auto-load into tool
+Profile & referee  (the core — `audit` is local and needs no API key):
+  audit       [--days N] [--all] [--json] [--report [FILE]] [--report-html [FILE]] [--layer NAME] [--compare A B] [--session ID] [--reingest]  Audit agent sessions: where tokens go + findings; --session waterfall; --report / --report-html
+  rig         <corpus.json> [--providers ...] [--repeats N] [--tier T] [--dry-run] | --observe <optimizer> [--days N] | --leaderboard <glob>  Referee context optimizers: tokens at fixed success (controlled), observational A/B, or a leaderboard
+  benchmark   [path]                       Model the cache-write cost of delivering repo context
+
+Setup:
+  init        [path] [--team]              One-time repo setup (--team adds GitHub Actions workflows)
+  doctor      [path]                       Check setup: models, hooks, git, context files
+  hook        install|uninstall [path]     Manage the git post-commit hook
+
+Optional — context layer  (the reference optimizer `cram rig` benchmarks; experimental, not the product):
+  task        "<description>" [--target T] Populate CURRENT_TASK.md and auto-load into your tool
   add         <file> [file ...] [--replace] Append files to the current session context
   continue    [path]                       Extend grace period — keep context on next commit
   sync        [path]                       Update ARCHITECTURE.md after a commit
   decide      "<decision>" [path]          Append an architectural decision to DECISIONS.md
   decisions   [--mine] [--days N] [path]   Show decisions; --mine extracts drafts from git log
   gotcha      "<trap>" [path]              Append a non-obvious trap to GOTCHAS.md
-  audit       [--days N] [--all] [--json] [--report [FILE]] [--report-html [FILE]] [--layer NAME] [--compare A B] [--session ID] [--reingest]  Audit agent sessions: where tokens go + findings; --session for a per-request waterfall; --report for markdown, --report-html for a standalone HTML report
-  benchmark   [path]                       Show token savings vs full-repo auto-indexing
-  rig         <corpus.json> [--providers ...] [--repeats N] [--tier T] [--dry-run] | --observe <optimizer> [--days N] | --leaderboard <glob>  Verify context optimizers: controlled (tokens at fixed success), observational A/B, or render a leaderboard
   status      [path]                       Show .ai-context/ freshness
-  doctor      [path]                       Check setup: models, hooks, git, context files
-  hook        install|uninstall [path]     Manage the git post-commit hook
-  mcp         [--repo PATH]                Start MCP server (stdio) for Claude Code / agents
+  mcp         [--repo PATH]                Start MCP server (stdio) delivering context to Claude Code / agents
 
 --target choices: cursor | claude | copilot | codex | windsurf | gemini | all
   Set a default in .ai-context/config.toml:  [task] default_target = "cursor"

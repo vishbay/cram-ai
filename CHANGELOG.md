@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format is based on
   rate instead of being read as a task loss; a passing run with no measurable transcript is
   counted toward success but its tokens are **not** averaged in as a phantom 0.
 
+### Changed
+- Repositioned the context layer as the **reference optimizer** `cram rig` benchmarks, not a
+  product claim: `cram --help` now groups commands ("Profile & referee" / "Setup" / "Optional —
+  context layer"); `recommend.py`'s context-layer entry is labelled experimental (one remediation,
+  verify don't assume); "token savings" softened to "model the cache-write cost" in `cram
+  benchmark` help, the `run_benchmark` MCP docstring, and the README.
+
 ### Added
 - `cram audit`: a **versioned, stable JSON contract** — every `--json` document (aggregate,
   `--session`, `--layer`, `--compare`) carries `schema_version` (`audit/1`), the aggregate

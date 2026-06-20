@@ -46,6 +46,9 @@ AUDIT_BASE_PRICE: float = float(os.environ.get(
 # A tool result above this serialized size counts as oversized — it gets
 # carried (re-read) by every subsequent request in the session.
 # Override with: CRAM_AUDIT_BIG_RESULT_BYTES=20000
+# Version of the --json contract (collect_audit dict + --session/--layer/--compare
+# wrappers). Bump on any breaking shape change; consumers can gate on it.
+AUDIT_SCHEMA_VERSION = 'audit/1'
 BIG_RESULT_BYTES: int = int(os.environ.get('CRAM_AUDIT_BIG_RESULT_BYTES', '20000'))
 # Heuristic for the opt-in Cursor token estimate (Cursor carries no usage data).
 # Override with CRAM_CHARS_PER_TOKEN; default 4 matches cram's size//4 convention.
@@ -657,6 +660,9 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     )
 
     data = {
+        # Versioned, stable contract for JSON consumers (the GitHub Action, the
+        # rig leaderboard, dashboards). Bump on any breaking shape change.
+        'schema_version':            AUDIT_SCHEMA_VERSION,
         'days':                      days,
         'sessions':                  total,
         'avg_reads':                 avg_reads,
@@ -722,6 +728,16 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'parse_failures':            len(store.run_failures),
         # None unless the window contains both context-tool-on and -off sessions.
         'context_mode_segment':      context_mode_segment,
+        # Per-metric basis for JSON consumers (the tables already label these;
+        # this makes measured-vs-estimated machine-readable). layer_costs rows
+        # carry their own `basis`.
+        'bases': {
+            'pre_edit_spend_cost':      'measured',
+            'carried_cost_per_session': 'measured',
+            'orient_cost_per_session':  'estimated',
+            'monthly_orient_cost':      'estimated',
+            'est_cursor_read_tokens':   'estimated',
+        },
     }
     data['findings'] = audit_findings.derive_findings(data)
     return data
@@ -1071,6 +1087,7 @@ def run_compare(path_a: str, path_b: str, days: int = 30,
 
     if as_json:
         print(json.dumps({
+            'schema_version': AUDIT_SCHEMA_VERSION,
             'days': days,
             'a': {'path': root_a, 'data': data_a},
             'b': {'path': root_b, 'data': data_b},
@@ -1161,7 +1178,7 @@ def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
         return
 
     if as_json:
-        print(json.dumps(tl, indent=2))
+        print(json.dumps({'schema_version': AUDIT_SCHEMA_VERSION, **tl}, indent=2))
         return
 
     sid = os.path.splitext(os.path.basename(path))[0]
@@ -1313,7 +1330,8 @@ def run_layer(layer: str, repo_root: str, days: int = 30, all_projects: bool = F
     """`cram audit --layer <name>` — print the evidence under one waste class."""
     rows = collect_layer(repo_root, layer, days, all_projects, reingest=reingest)
     if as_json:
-        print(json.dumps({'layer': layer, 'rows': rows}, indent=2))
+        print(json.dumps({'schema_version': AUDIT_SCHEMA_VERSION,
+                          'layer': layer, 'rows': rows}, indent=2))
         return
     if not rows:
         print(f"No {layer} evidence in the last {days} days.")

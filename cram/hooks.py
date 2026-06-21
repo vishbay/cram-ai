@@ -319,11 +319,11 @@ def install_claude_code_hooks(repo_root: str = '.') -> bool:
         with open(settings_path, 'w') as f:
             _json.dump(settings, f, indent=2)
             f.write('\n')
-        print(f"  .claude/settings.json")
+        print("  .claude/settings.json")
         return True
 
     if not wrote_any:
-        print(f"  .claude/settings.json already configured — skipping.")
+        print("  .claude/settings.json already configured — skipping.")
     return wrote_any
 
 

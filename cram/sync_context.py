@@ -8,7 +8,7 @@ import sys
 import time
 
 from cram.init import scan_structure
-from cram.utils import call_model, call_context_model, strip_code_fence
+from cram.utils import call_context_model, strip_code_fence
 from cram.symbols import write_symbols_md
 from cram.context_dir import CONTEXT_DIR, has_context_dir, resolve_context_dir
 

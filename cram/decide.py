@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import date
 
-from cram.context_dir import CONTEXT_DIR, context_path, context_basename
+from cram.context_dir import context_path, context_basename
 
 DECISIONS_FILE = 'DECISIONS.md'
 
@@ -42,7 +42,7 @@ def append_decision(root: str, decision_text: str) -> None:
         f.write(entry)
 
     print(f"Added [{decision_id}] to {context_basename(root)}/{DECISIONS_FILE}")
-    print(f"  Edit the file to fill in Reason and Alternatives.")
+    print("  Edit the file to fill in Reason and Alternatives.")
 
 
 def main() -> None:

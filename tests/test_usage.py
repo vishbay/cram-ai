@@ -2,7 +2,6 @@
 import json
 import time
 from pathlib import Path
-import pytest
 
 
 def _write_jsonl(path: Path, entries: list[dict]) -> None:

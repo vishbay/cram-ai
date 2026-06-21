@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from cram.context_dir import context_path, context_basename
-from cram.decide import DECISIONS_FILE, _next_decision_id, append_decision
+from cram.decide import DECISIONS_FILE, _next_decision_id
 
 DECISION_KEYWORDS = re.compile(
     r'\b(chose|instead of|decided|switched? to|not using|because|moved? from|'
@@ -78,7 +78,7 @@ def _interactive_review(drafts: list[tuple[str, str]], root: str) -> int:
             if choice in ('a', ''):
                 # Reuse append_decision but inject reason into the file
                 _append_with_reason(root, decision, reason)
-                print(f"  → Added to DECISIONS.md")
+                print("  → Added to DECISIONS.md")
                 accepted += 1
                 break
             elif choice == 's':
@@ -127,7 +127,7 @@ def show_decisions(root: str) -> None:
 def mine_decisions(root: str, days: int) -> None:
     path = context_path(root, DECISIONS_FILE, warn=True)
     if not os.path.exists(path):
-        print(f"DECISIONS.md not found. Run `cram init` first.", file=sys.stderr)
+        print("DECISIONS.md not found. Run `cram init` first.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Scanning git log (last {days} days)…")

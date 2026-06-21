@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **Ruff** lint in dev deps and a CI `lint` job (`ruff check cram/ tests/`). Config in
+  `pyproject.toml` (ignores deliberate compact-style rules). Cleared the existing 90 findings
+  (unused imports, placeholder-less f-strings, unused vars).
+
+### Fixed
+- `docs/AUDIT_JSON.md`: the `schema_version` example said `audit/1`; now `audit/3`.
+
 ## [0.9.0] — 2026-06-21
 
 The profiler+referee hardening release: the profiler answers "what is this costing me, what do

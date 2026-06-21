@@ -106,7 +106,6 @@ def _commits_since_context_update(root: str) -> int | None:
 
     rel_dir = CONTEXT_DIR if os.path.isdir(os.path.join(root, CONTEXT_DIR)) else LEGACY_CONTEXT_DIR
     rel = os.path.join(rel_dir, 'ARCHITECTURE.md')
-    arch_path = os.path.join(root, rel)
     try:
         sha = subprocess.check_output(
             ['git', 'log', '-1', '--format=%H', '--', rel],

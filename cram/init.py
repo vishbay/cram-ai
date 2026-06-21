@@ -1,7 +1,6 @@
 """One-time setup: scans a repo, generates initial .ai-context/ files via Haiku."""
 
 import os
-import sys
 import fnmatch
 
 from cram.utils import call_model, strip_code_fence
@@ -236,9 +235,9 @@ def init_repo(target: str = '.', team: bool = False) -> None:
 
     # Write pointer-only CLAUDE.md to repo root (MCP config snippet, not injected content)
     write_to_target(root, 'claude', '')
-    print(f"  CLAUDE.md  (MCP config pointer)")
+    print("  CLAUDE.md  (MCP config pointer)")
 
-    print(f"\nDone. Created .ai-context/ with:")
+    print("\nDone. Created .ai-context/ with:")
     for fname in ['ARCHITECTURE.md', 'DECISIONS.md', 'GOTCHAS.md', 'CURRENT_TASK.md', 'SYMBOLS.md', '.gitignore']:
         print(f"  .ai-context/{fname}")
 
@@ -250,8 +249,8 @@ def init_repo(target: str = '.', team: bool = False) -> None:
     print("  1. Review .ai-context/ARCHITECTURE.md (edit if the summary is off)")
     print("  2. Edit .ai-context/DECISIONS.md — add your team's invariants")
     print("  3. Edit .ai-context/GOTCHAS.md — add non-obvious traps (add more over time)")
-    print(f"  4. Commit context so teammates get it automatically:")
-    print(f"       git add .ai-context/ .claude/ CLAUDE.md && git commit -m \"chore: init cram-ai\"")
+    print("  4. Commit context so teammates get it automatically:")
+    print("       git add .ai-context/ .claude/ CLAUDE.md && git commit -m \"chore: init cram-ai\"")
     print("  5. Run `cram task \"your task\"` to set the active task — context auto-loads next session")
     if not team:
         print("\nTip: run `cram init --team` to also generate a GitHub Actions workflow")

@@ -1,5 +1,4 @@
 """Tests for cram.cost_model."""
-import os
 import pytest
 
 
@@ -31,7 +30,7 @@ def test_daily_saving_never_negative():
 def test_nocram_scales_linearly_with_orient_files(monkeypatch):
     from cram import cost_model
     monkeypatch.setattr(cost_model, 'ORIENT_FILES', 4)
-    from cram.cost_model import CostInputs, daily_costs, orientation_tokens
+    from cram.cost_model import CostInputs, daily_costs
     inp = CostInputs(repo_tokens=10_000, repo_files=100, frozen_tok=500)
     d4 = daily_costs(inp, 3.0)
 

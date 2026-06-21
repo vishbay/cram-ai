@@ -268,7 +268,8 @@ class TestTaskSlotNamespacing:
         assert slot_file.read_text() == result
 
     def test_stale_slots_cleaned_on_generate(self, repo, monkeypatch):
-        import time, cram.mcp_server as srv
+        import time
+        import cram.mcp_server as srv
         monkeypatch.setattr(srv, '_repo_root', str(repo))
         monkeypatch.chdir(repo)
 
@@ -294,7 +295,8 @@ class TestTaskSlotNamespacing:
 
 class TestUsageLog:
     def test_generate_appends_to_usage_jsonl(self, repo, monkeypatch):
-        import json as _json, cram.mcp_server as srv
+        import json as _json
+        import cram.mcp_server as srv
         monkeypatch.setattr(srv, '_repo_root', str(repo))
         monkeypatch.chdir(repo)
 
@@ -311,7 +313,8 @@ class TestUsageLog:
         assert 'ts' in line
 
     def test_reload_appends_to_usage_jsonl(self, repo, monkeypatch):
-        import json as _json, cram.mcp_server as srv
+        import json as _json
+        import cram.mcp_server as srv
         monkeypatch.setattr(srv, '_repo_root', str(repo))
 
         (repo / CONTEXT_DIR / 'CURRENT_TASK.md').write_text('# Task: reload test\n\nsome context\n')
@@ -323,7 +326,7 @@ class TestUsageLog:
         assert line['source'] == 'reload'
 
     def test_multiple_calls_append_multiple_lines(self, repo, monkeypatch):
-        import json as _json, cram.mcp_server as srv
+        import cram.mcp_server as srv
         monkeypatch.setattr(srv, '_repo_root', str(repo))
         monkeypatch.chdir(repo)
 
@@ -376,7 +379,8 @@ class TestProposeDecision:
         assert '[DECISION-002]' in content
 
     def test_writes_suggestions_jsonl(self, repo, monkeypatch):
-        import json, cram.mcp_server as srv
+        import json
+        import cram.mcp_server as srv
         monkeypatch.setattr(srv, '_repo_root', str(repo))
         (repo / CONTEXT_DIR / 'DECISIONS.md').write_text('# Decisions\n')
 

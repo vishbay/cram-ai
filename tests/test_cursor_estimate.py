@@ -6,9 +6,7 @@ them. `--estimate-cursor` turns the files a session read into a clearly-labelled
 
 from __future__ import annotations
 import json
-import os
 
-import pytest
 
 from cram import audit_events
 from cram.audit import collect_audit

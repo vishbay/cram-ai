@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import re
 
-from cram.context_dir import CONTEXT_DIR, resolve_context_dir
+from cram.context_dir import resolve_context_dir
 
 try:
     import tomllib

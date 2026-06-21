@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import date
 
-from cram.context_dir import CONTEXT_DIR, context_path, context_basename
+from cram.context_dir import context_path, context_basename
 
 GOTCHAS_FILE = 'GOTCHAS.md'
 
@@ -42,7 +42,7 @@ def append_gotcha(root: str, trap_text: str) -> None:
         f.write(entry)
 
     print(f"Added [{gotcha_id}] to {context_basename(root)}/{GOTCHAS_FILE}")
-    print(f"  Edit the file to fill in File/area, Why it exists, and Safe pattern.")
+    print("  Edit the file to fill in File/area, Why it exists, and Safe pattern.")
 
 
 def main() -> None:

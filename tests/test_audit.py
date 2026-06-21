@@ -4,10 +4,7 @@ from __future__ import annotations
 import datetime
 import io
 import json
-import os
-import tempfile
 
-import pytest
 
 from cram.audit import (
     _analyze_transcript, _find_all_tool_use, collect_audit, ratio_band,

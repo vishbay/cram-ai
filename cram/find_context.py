@@ -6,8 +6,8 @@ import re
 import sys
 
 from cram.utils import (
-    call_model,
     call_context_model,
+    call_model,  # noqa: F401 — re-exported so tests can assert it is NOT called
     get_model_recommendations,
     find_git_root as _find_git_root,
 )
@@ -452,11 +452,11 @@ def find_context(task: str, target: str | None = None, inject: bool = False, roo
         print(f"  → {fpath}{id_note}  ~{tok:,} tokens")
 
     # ── Stage 4: write context ───────────────────────────────────
-    print(f"[4/4] Writing context ...")
+    print("[4/4] Writing context ...")
     sys.stdout.flush()
 
     _archive_current_task_to_history()
-    inlined = populate_current_task(task, file_entries, ctx_model, coding_model)
+    populate_current_task(task, file_entries, ctx_model, coding_model)
 
     task_path = context_path('.', 'CURRENT_TASK.md', warn=True)
     with open(task_path) as f:

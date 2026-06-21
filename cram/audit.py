@@ -35,7 +35,7 @@ AUDIT_TOK_PER_FILE: int = int(os.environ.get('CRAM_AUDIT_TOK_PER_FILE', '2500'))
 # Dollar attribution is provider-pluggable: select with CRAM_PROVIDER
 # (anthropic | openai | gemini | local), override individual fields via
 # CRAM_PRICE_INPUT_PER_MTOK / CRAM_CACHE_WRITE_MULT / CRAM_CACHE_READ_MULT.
-from cram.cost_model import get_provider_pricing, resolve_provider
+from cram.cost_model import get_provider_pricing, resolve_provider, resolve_model_price
 
 AUDIT_PROVIDER: str = resolve_provider()
 _PRICING = get_provider_pricing(AUDIT_PROVIDER)
@@ -48,7 +48,7 @@ AUDIT_BASE_PRICE: float = float(os.environ.get(
 # Override with: CRAM_AUDIT_BIG_RESULT_BYTES=20000
 # Version of the --json contract (collect_audit dict + --session/--layer/--compare
 # wrappers). Bump on any breaking shape change; consumers can gate on it.
-AUDIT_SCHEMA_VERSION = 'audit/1'
+AUDIT_SCHEMA_VERSION = 'audit/2'
 BIG_RESULT_BYTES: int = int(os.environ.get('CRAM_AUDIT_BIG_RESULT_BYTES', '20000'))
 # Heuristic for the opt-in Cursor token estimate (Cursor carries no usage data).
 # Override with CRAM_CHARS_PER_TOKEN; default 4 matches cram's size//4 convention.
@@ -580,6 +580,20 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     sessions_per_month      = total / (days / 30)
     monthly_orient_cost     = orient_cost_per_session * sessions_per_month
 
+    # ── Real, model-aware $ (measured pool) ───────────────────────────────────
+    # Price each session's effective input by the actual model it ran on
+    # (claude-opus-4-8, gpt-5, …); fall back to the provider flat rate when the
+    # model is unrecorded (e.g. Cursor). Input-side only — that's what cram
+    # measures — so it's a floor on real spend, labelled measured.
+    total_eff_cost = 0.0
+    model_mix: dict[str, int] = {}
+    for s in measured:
+        eff = _eff(s['input_tokens'], s['cache_writes'], s['cache_reads'])
+        total_eff_cost += eff * resolve_model_price(s.get('model'))
+        model_mix[s.get('model') or 'unknown'] = model_mix.get(s.get('model') or 'unknown', 0) + 1
+    monthly_cost = total_eff_cost / (days / 30) if days else 0.0
+    cost_per_measured_session = total_eff_cost / len(measured) if measured else None
+
     # Weekly trend of the primary metric, oldest → newest, last 8 ISO weeks
     weekly_map: dict[str, list[float]] = {}
     for s in all_sessions:
@@ -650,6 +664,21 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     layer_costs.sort(key=lambda r: (r['basis'] == 'count',
                                     -(r.get('cost_per_session') or 0)))
 
+    # The single most expensive avoidable layer — what to fix first. We headline
+    # the largest *single* layer rather than a sum, because the layers overlap
+    # and summing them would overstate (fake precision the report avoids).
+    _costed = [l for l in layer_costs if l.get('cost_per_session')]
+    biggest_avoidable = None
+    if _costed:
+        top = _costed[0]
+        biggest_avoidable = {
+            'layer':            top['layer'],
+            'basis':            top['basis'],
+            'cost_per_session': top['cost_per_session'],
+            'monthly_cost':     top['cost_per_session'] * sessions_per_month,
+            'note':             top.get('note', ''),
+        }
+
     # Neutral-auditor view: split on whether a context tool was active. Only
     # meaningful when the pool actually contains both — otherwise it's noise.
     cm_on  = [s for s in all_sessions if s.get('context_mode')]
@@ -712,6 +741,14 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'orient_cost_per_session':   orient_cost_per_session,
         'sessions_per_month':        sessions_per_month,
         'monthly_orient_cost':       monthly_orient_cost,
+        # Real, model-aware $ over the measured pool (input-side effective tokens
+        # priced per session's own model). A measured floor on real spend.
+        'total_eff_cost':            total_eff_cost,
+        'monthly_cost':              monthly_cost,
+        'cost_per_measured_session': cost_per_measured_session,
+        'cost_measured_sessions':    len(measured),
+        'model_mix':                 model_mix,
+        'biggest_avoidable':         biggest_avoidable,
         'provider':                  AUDIT_PROVIDER,
         'projects':                  project_summaries,
         'weekly':                    weekly,
@@ -734,6 +771,8 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'bases': {
             'pre_edit_spend_cost':      'measured',
             'carried_cost_per_session': 'measured',
+            'total_eff_cost':           'measured',
+            'monthly_cost':             'measured',
             'orient_cost_per_session':  'estimated',
             'monthly_orient_cost':      'estimated',
             'est_cursor_read_tokens':   'estimated',
@@ -741,6 +780,26 @@ def _collect_audit_inner(store, repo_root: str, days: int,
     }
     data['findings'] = audit_findings.derive_findings(data)
     return data
+
+
+def cost_headline(data: dict) -> str | None:
+    """One-line money headline: real spend + the single biggest avoidable layer.
+
+    None when nothing measurable. Shared by the text/markdown/HTML reports so the
+    audit leads with 'what is this costing me, and what should I fix first'.
+    """
+    n = data.get('cost_measured_sessions') or 0
+    total = data.get('total_eff_cost') or 0.0
+    if not n or not total:
+        return None
+    parts = [f"~${total:,.2f} effective input over {n} measured session"
+             f"{'' if n == 1 else 's'}",
+             f"~${data.get('monthly_cost') or 0:,.2f}/mo at this rate"]
+    big = data.get('biggest_avoidable')
+    if big and big.get('monthly_cost'):
+        parts.append(f"biggest avoidable: {big['layer']} "
+                     f"~${big['monthly_cost']:,.2f}/mo ({big['basis']})")
+    return ' · '.join(parts)
 
 
 def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
@@ -784,6 +843,9 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
     total = data['sessions']
 
     print(f"\nAgent session audit — last {days} days\n")
+    _hl = cost_headline(data)
+    if _hl:
+        print(f"  💸 {_hl}\n")
     print(f"  Sessions analysed:              {total}")
     print(f"  Avg reads/session:              {data['avg_reads']:.1f}")
     print(f"  Avg reads before first edit:    {data['avg_reads_before_edit']:.1f}  ← primary metric")

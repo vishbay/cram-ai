@@ -79,6 +79,50 @@ def get_provider_pricing(provider: str | None = None) -> dict:
             pass  # ignore unparseable overrides, keep table value
     return pricing
 
+# Per-model input price ($/1M tokens), matched by substring against the model id
+# recorded in the transcript (e.g. "claude-opus-4-8" → 'opus'). Representative
+# mid-2026 list prices; relative-comparison defaults, not billing-grade — override
+# the whole map via CRAM_MODEL_PRICES (JSON) or fall back to the provider rate.
+MODEL_INPUT_PER_MTOK = {
+    'opus':          5.00,
+    'sonnet':        3.00,
+    'haiku':         1.00,
+    'gpt-5':         1.25,
+    'gpt-4o-mini':   0.15,
+    'gpt-4o':        2.50,
+    'o3':            2.00,
+    'o4':            2.00,
+    'gemini-2.5-pro': 1.25,
+    'gemini':        0.30,
+}
+
+
+def _model_price_table() -> dict:
+    raw = os.environ.get('CRAM_MODEL_PRICES')
+    if raw:
+        try:
+            import json
+            return {str(k).lower(): float(v) for k, v in json.loads(raw).items()}
+        except Exception:
+            pass
+    return MODEL_INPUT_PER_MTOK
+
+
+def resolve_model_price(model: str | None, provider: str | None = None) -> float:
+    """Input price per *token* for a model id, by substring match.
+
+    Falls back to the provider's flat input rate when the model is unknown or
+    unrecorded (e.g. Cursor transcripts), so dollar attribution never crashes —
+    it just gets less precise. Returns $/token.
+    """
+    if model:
+        m = model.lower()
+        for key, price in _model_price_table().items():
+            if key in m:
+                return price / 1_000_000
+    return get_provider_pricing(provider)['input_per_mtok'] / 1_000_000
+
+
 # Workload assumptions (overridable via env).
 SESSIONS_PER_DAY  = int(os.environ.get('AICONTEXT_SESSIONS_PER_DAY',  '4'))
 TASKS_PER_SESSION = int(os.environ.get('AICONTEXT_TASKS_PER_SESSION', '4'))

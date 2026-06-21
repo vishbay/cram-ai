@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **Real, model-aware $ in `cram audit`**: each session's effective input is now priced by the
+  actual model it ran on (`claude-opus-4-8`, `gpt-5`, …; falls back to the provider rate when
+  unrecorded), instead of a flat Sonnet rate. The report leads with a money headline — "~$X
+  effective input · ~$Y/mo · biggest avoidable: <layer> ~$Z/mo" — across text, markdown, and the
+  HTML dashboard. New JSON keys (`schema_version` → `audit/2`): `total_eff_cost`, `monthly_cost`,
+  `cost_per_measured_session`, `cost_measured_sessions`, `model_mix`, `biggest_avoidable`. New
+  `cost_model.resolve_model_price` (override the table via `CRAM_MODEL_PRICES`).
+
 ### Fixed
 - `cram rig` no longer silently miscounts failures. Each cell now records a precise status
   (`ran` / `no_transcript` / `unavailable` / `setup_error` / `run_error` / `oracle_timeout`):

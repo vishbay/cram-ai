@@ -2,7 +2,6 @@
 (repomix, files-to-prompt, …) with no cram-specific integration."""
 
 from __future__ import annotations
-import os
 import sys
 
 from cram import rig

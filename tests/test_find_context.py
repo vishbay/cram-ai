@@ -1,6 +1,5 @@
 """Tests for cram/find_context.py — path cleaning, file inlining, CLI flow."""
 
-import os
 from unittest.mock import patch
 
 import pytest

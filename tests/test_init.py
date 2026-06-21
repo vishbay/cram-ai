@@ -1,9 +1,7 @@
 """Tests for cram/init.py — file exclusions, tree scanning, repo setup."""
 
-import os
 from unittest.mock import patch
 
-import pytest
 
 from cram.init import (
     _is_excluded_file,

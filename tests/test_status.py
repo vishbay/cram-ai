@@ -1,6 +1,5 @@
 """Tests for cram.status — staleness_score, staleness_band, get_status_dict."""
 
-import os
 import subprocess
 import pytest
 

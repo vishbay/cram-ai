@@ -32,10 +32,21 @@ dependencies = [
 [project.optional-dependencies]
 multi-provider = ["litellm>=1.40.0"]
 mcp = ["mcp>=1.0.0"]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
 cram = "cram.cli:main"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# Default rules (pyflakes + a pycodestyle subset). Ignore deliberate style here:
+#   E741 short names like `l`/`e` read fine in tight code,
+#   E701/E702 compact one-line guards (`if not x: return`) are intentional,
+#   E402 a few modules order imports after constants on purpose.
+ignore = ["E741", "E701", "E702", "E402"]
 
 [project.urls]
 Homepage = "https://github.com/vishbay/cram-ai"

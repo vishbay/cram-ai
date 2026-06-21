@@ -6,7 +6,7 @@ import os
 import sqlite3
 
 from cram import audit_events
-from cram.audit_store import AuditStore, SCHEMA_VERSION, resolve_db_path
+from cram.audit_store import AuditStore, resolve_db_path
 from tests.test_audit import _make_transcript
 
 

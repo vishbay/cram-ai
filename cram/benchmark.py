@@ -119,13 +119,13 @@ def run_benchmark(root: str) -> None:
     print(f"  Repo: {repo_name}  ({file_count} source files, ~{repo_tokens:,} tokens)\n")
     print("  Context layers")
     print(f"  {sep}")
-    print(f"  Frozen prefix  (cached once, read thereafter)")
+    print("  Frozen prefix  (cached once, read thereafter)")
     for fname in _FROZEN_FILES:
         if fname in frozen:
             print(f"    {fname:<18} ~{frozen[fname]:>7,} tok")
     print(f"    {'= prefix total':<18} ~{frozen_tok:>7,} tok  "
           f"{_bar(frozen_tok / max(repo_tokens, 1))} {frozen_tok / max(repo_tokens, 1) * 100:.1f}% of repo")
-    print(f"\n  Volatile context  (per task, delivered as a tool result)")
+    print("\n  Volatile context  (per task, delivered as a tool result)")
     for fname in _VOLATILE_FILES:
         if fname in volatile:
             print(f"    {fname:<18} ~{volatile[fname]:>7,} tok")

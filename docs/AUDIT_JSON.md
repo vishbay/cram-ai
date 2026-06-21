@@ -21,7 +21,7 @@ gate your consumer on it. (`audit/2` added the real-$ keys; `audit/3` added `tre
 
 ## Aggregate document (selected keys)
 
-- `schema_version` — contract version, e.g. `"audit/1"`.
+- `schema_version` — contract version, e.g. `"audit/3"`.
 - `days`, `sessions` — window and number of sessions analysed.
 - `avg_reads_before_edit`, `avg_ratio`, `ratio_band` — orientation signal.
 - `avg_cache_writes`, `avg_cache_reads`, `cache_blind_sessions` — cache engagement.

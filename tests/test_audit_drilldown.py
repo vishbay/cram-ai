@@ -10,7 +10,7 @@ from cram.audit import (
     collect_audit,
 )
 from tests.test_audit import (
-    _make_transcript, _write_cursor_jsonl, _write_codex_jsonl,
+    _make_transcript, _write_codex_jsonl,
     _exec_cmd, _apply_patch,
 )
 

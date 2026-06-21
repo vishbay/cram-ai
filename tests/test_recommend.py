@@ -4,7 +4,6 @@ cram's prose findings into structured, verifiable recommendations."""
 
 from __future__ import annotations
 
-from cram import recommend
 from cram.recommend import (
     OPTIMIZERS, WASTE_CLASS_OF, CLASS_OPTIMIZERS,
     waste_class_for, recommend_for, attach_recommendations,

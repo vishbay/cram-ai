@@ -1,8 +1,6 @@
 """Tests for cram/utils.py — strip_code_fence and call_model routing."""
 
 import json
-import subprocess
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -76,7 +74,7 @@ class TestCallModelRouting:
                     'ANTHROPIC_API_KEY': '',
                 }.get(k, d)
                 with patch('cram.utils._call_via_cli', return_value='ok') as mock_cli:
-                    result = call_model("hello")
+                    call_model("hello")
         mock_cli.assert_called_once()
 
     def test_litellm_takes_priority_over_api_key(self):
@@ -394,7 +392,7 @@ class TestCallContextModelRouting:
     def test_vertex_ai_prefix_routes_to_call_via_gemini(self):
         from cram.utils import call_context_model
         with patch('cram.utils.load_settings', return_value={'context_model': 'vertex_ai/gemini-2.5-pro'}):
-            with patch('cram.utils._call_via_gemini', return_value='vx') as mock_g:
+            with patch('cram.utils._call_via_gemini', return_value='vx'):
                 result = call_context_model('hi')
         assert result == 'vx'
 

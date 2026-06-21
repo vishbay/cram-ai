@@ -931,7 +931,7 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
               f"check that prompt caching is engaging")
 
     print()
-    print(f"  Pre-edit context share (measured):")
+    print("  Pre-edit context share (measured):")
     excl = (f"  ({data['read_only_sessions']} no-edit sessions excluded)"
             if data['read_only_sessions'] else '')
     print(f"    Edit sessions:                {data['edit_sessions']}/{total}{excl}")
@@ -950,12 +950,12 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
             print(f"    Pre-edit spend/session:       ~{data['pre_edit_spend_eff_tokens']:,.0f} eff. tokens"
                   f"  (~${data['pre_edit_spend_cost']:.4f}, {data['provider']} pricing)")
     elif data['edit_sessions']:
-        print(f"    No token usage in these sessions — measured share "
-              f"unavailable (estimates below)")
+        print("    No token usage in these sessions — measured share "
+              "unavailable (estimates below)")
 
     if data['avg_requests']:
         print()
-        print(f"  Context bloat:")
+        print("  Context bloat:")
         print(f"    Avg requests/session:         {data['avg_requests']:.0f}")
         print(f"    Avg context per request:      {data['avg_context_per_request']:,.0f} tokens"
               f"  (peak {data['peak_context']:,})")
@@ -986,13 +986,13 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
 
     if data['avg_error_results'] > 0 or data['avg_edit_churn'] > 0:
         print()
-        print(f"  Retry loops:")
+        print("  Retry loops:")
         print(f"    Failed tool calls/session:    {data['avg_error_results']:.1f}"
               f"  ({data['sessions_with_errors']}/{total} sessions had failures)")
         print(f"    Same-file re-edits/session:   {data['avg_edit_churn']:.1f}")
         top_fc = [c for c in data.get('top_failed_commands', []) if c['failures'] > 1]
         if top_fc:
-            print(f"    Most-retried failed commands (same command failing repeatedly):")
+            print("    Most-retried failed commands (same command failing repeatedly):")
             for c in top_fc[:5]:
                 scope = f"{c['sessions']} session{'s' if c['sessions'] != 1 else ''}"
                 print(f"      {c['failures']:>3}× in {scope}   {c['cmd'][:70]}")
@@ -1000,7 +1000,7 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
     repeated_files = [t for t in data['top_read_files'] if t[1] > 1]
     if repeated_files:
         print()
-        print(f"  Top repeated files (most-read; candidates for a repo briefing):")
+        print("  Top repeated files (most-read; candidates for a repo briefing):")
         for fp, r, n in repeated_files[:5]:
             disp = audit_events.repo_rel(fp, repo_root)
             print(f"    {r:>3}× in {n} session{'s' if n != 1 else ''}   {disp}")
@@ -1009,7 +1009,7 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
     if seg:
         on, off = seg['on'], seg['off']
         print()
-        print(f"  Context tool segment (ctx_* active vs not — A/B without a second checkout):")
+        print("  Context tool segment (ctx_* active vs not — A/B without a second checkout):")
         print(f"    {'Metric':<30} {'ctx on':>12} {'ctx off':>12}")
         print(f"    {'Sessions':<30} {on['sessions']:>12} {off['sessions']:>12}")
         print(f"    {'Reads before first edit':<30} {on['avg_reads_before_edit']:>12.1f} "
@@ -1020,10 +1020,10 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
               f"{off['sessions_with_big_results']:>12}")
         print(f"    {'Avg peak context (tokens)':<30} {on['avg_peak_context']:>12,.0f} "
               f"{off['avg_peak_context']:>12,.0f}")
-        print(f"    → context-mode targets carried-result cost + peak context; "
-              f"this is whether it landed.")
-        print(f"      (ctx_* reads run in the sandbox, off-transcript — read the "
-              f"carried-cost/peak columns, not reads-before-edit.)")
+        print("    → context-mode targets carried-result cost + peak context; "
+              "this is whether it landed.")
+        print("      (ctx_* reads run in the sandbox, off-transcript — read the "
+              "carried-cost/peak columns, not reads-before-edit.)")
 
     if data['findings']:
         print()
@@ -1049,10 +1049,10 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
     print(f"  Note: cost is modelled from reads_before_edit ({AUDIT_TOK_PER_FILE:,} tok/file assumed); "
           f"the ratio is the measured signal.")
     print()
-    print(f"  Ratio guide: < 2× good · 2–5× normal · > 5× context isn't landing")
+    print("  Ratio guide: < 2× good · 2–5× normal · > 5× context isn't landing")
 
     if all_projects and len(data['projects']) > 1:
-        print(f"\n  Per-project breakdown:")
+        print("\n  Per-project breakdown:")
         print(f"  {'Project':<45} {'Sessions':>8} {'Reads/s':>8} {'RBE':>6} {'CW/s':>12}")
         print(f"  {'-'*45} {'-'*8} {'-'*8} {'-'*6} {'-'*12}")
         for name, n, reads, rbe, cw in sorted(data['projects'], key=lambda x: -x[3]):
@@ -1345,7 +1345,7 @@ def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
           f"first request: {tl['first_context']:,} tok")
 
     if tl['carried']:
-        print(f"\n  Carried waste (oversized results re-read every later turn):")
+        print("\n  Carried waste (oversized results re-read every later turn):")
         for c in tl['carried'][:5]:
             src = audit_events.repo_rel(c['file'], repo_root) if c['file'] else '(result)'
             print(f"    {src}: {c['tokens']:,} tok × {c['carried_turns']} later turns "
@@ -1354,7 +1354,7 @@ def run_session(ident: str, repo_root: str, as_json: bool = False) -> None:
               f"({AUDIT_PROVIDER} pricing)")
 
     if tl['redundant']:
-        print(f"\n  Redundant re-reads (same file read >1×):")
+        print("\n  Redundant re-reads (same file read >1×):")
         for fp, n in tl['redundant'][:5]:
             print(f"    {n}× {audit_events.repo_rel(fp, repo_root)}")
 

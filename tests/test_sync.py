@@ -1,7 +1,7 @@
 """Tests for cram/sync_context.py — git diff, architecture update, sync flow."""
 
 import subprocess
-from unittest.mock import patch, call
+from unittest.mock import patch
 
 import pytest
 

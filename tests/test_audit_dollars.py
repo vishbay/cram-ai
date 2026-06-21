@@ -66,7 +66,7 @@ def test_real_dollars_are_model_aware(tmp_path, monkeypatch):
     assert data['model_mix'] == {'claude-opus-4-8': 1}
     assert data['cost_measured_sessions'] == 1
     assert data['monthly_cost'] == pytest.approx(5.00, rel=1e-3)   # 30-day window
-    assert data['schema_version'] == 'audit/2'
+    assert data['schema_version'] == 'audit/3'
     assert data['bases']['total_eff_cost'] == 'measured'
 
 

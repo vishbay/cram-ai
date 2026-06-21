@@ -287,6 +287,13 @@ def render_report(data: dict, repo_root: str) -> str:
         lines.append('')
         lines.append('## Weekly trend — reads before first edit')
         lines.append('')
+        tr = data.get('trend')
+        if tr:
+            pct = f"{tr['change_pct']:+.0%}" if tr.get('change_pct') is not None else '—'
+            arrow = {'worsening': '↑', 'improving': '↓', 'flat': '→'}[tr['direction']]
+            lines.append(f"`{tr['sparkline']}`  **{tr['prior']:.1f} → {tr['recent']:.1f}** "
+                         f"({pct} {arrow} **{tr['direction']}**) over {tr['weeks']} weeks")
+            lines.append('')
         lines.append('| Week | Avg | Sessions |')
         lines.append('|---|---:|---:|')
         for wk, avg, n in data['weekly']:

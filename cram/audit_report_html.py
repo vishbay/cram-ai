@@ -131,6 +131,13 @@ def _headline(data: dict) -> str:
             money += (f' Biggest avoidable: <b>{_esc(big_av["layer"])}</b> '
                       f'~${big_av["monthly_cost"]:,.2f}/mo ({_esc(big_av["basis"])}).')
         desc = money + '<br><br>' + desc
+    tr = data.get('trend')
+    if tr:
+        pct = f"{tr['change_pct']:+.0%}" if tr.get('change_pct') is not None else '—'
+        arrow = {'worsening': '↑', 'improving': '↓', 'flat': '→'}[tr['direction']]
+        desc = (f'📈 reads→edit over {tr["weeks"]} wks <span class="mono">'
+                f'{_esc(tr["sparkline"])}</span> {tr["prior"]:.1f}→{tr["recent"]:.1f} '
+                f'(<b>{pct} {arrow} {_esc(tr["direction"])}</b>).<br><br>' + desc)
     return f"""
     <div class="panel"><div class="ph">Headline</div>
       <div class="pb headline">

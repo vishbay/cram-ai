@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Trend over time** in `cram audit`: the report leads with the direction of the primary metric
+  (reads-before-edit) over the weekly series — a sparkline plus a session-weighted recent-vs-prior
+  delta tagged `worsening` / `improving` / `flat` ("reads→edit ▁▃▆█ 2.1→5.8 +38% ↑ worsening").
+  Shown in text, markdown, and the HTML dashboard. New JSON `trend` key (`schema_version` →
+  `audit/3`).
 - **Finding → verify loop**: every `cram audit` finding now carries a structured `verify`
   recipe (`{command, expect}`) — how to *prove* the fix worked, welding the profiler to the
   referee (`cram rig` for optimizer-style fixes, `cram audit --compare` / re-audit for config

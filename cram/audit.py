@@ -48,7 +48,7 @@ AUDIT_BASE_PRICE: float = float(os.environ.get(
 # Override with: CRAM_AUDIT_BIG_RESULT_BYTES=20000
 # Version of the --json contract (collect_audit dict + --session/--layer/--compare
 # wrappers). Bump on any breaking shape change; consumers can gate on it.
-AUDIT_SCHEMA_VERSION = 'audit/2'
+AUDIT_SCHEMA_VERSION = 'audit/3'
 BIG_RESULT_BYTES: int = int(os.environ.get('CRAM_AUDIT_BIG_RESULT_BYTES', '20000'))
 # Heuristic for the opt-in Cursor token estimate (Cursor carries no usage data).
 # Override with CRAM_CHARS_PER_TOKEN; default 4 matches cram's size//4 convention.
@@ -61,6 +61,57 @@ INGEST_PROGRESS_MIN: int = 50
 # Cache multipliers vs base input price (0.1x read / 1.25x write on Anthropic).
 CACHE_READ_MULT: float = _PRICING['cache_read_mult']
 CACHE_WRITE_MULT: float = _PRICING['cache_write_mult']
+
+_SPARK = '▁▂▃▄▅▆▇█'
+
+
+def _sparkline(values: list[float]) -> str:
+    """A unicode sparkline for a numeric series (empty string if no data)."""
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return ''
+    lo, hi = min(vals), max(vals)
+    if hi == lo:
+        return _SPARK[0] * len(values)
+    span = hi - lo
+    return ''.join(
+        _SPARK[min(len(_SPARK) - 1, int((v - lo) / span * (len(_SPARK) - 1)))]
+        if v is not None else ' ' for v in values)
+
+
+def _weekly_trend(weekly: list, *, lower_is_better: bool = True) -> dict | None:
+    """Direction of the primary metric over the weekly series.
+
+    weekly: [(iso_week, avg, n)]. Compares the session-weighted average of the
+    recent half vs the prior half so a couple of noisy weeks don't flip it.
+    Returns None when there aren't at least 2 weeks. reads-before-edit is a waste
+    metric, so a rise is `worsening`.
+    """
+    if len(weekly) < 2:
+        return None
+    vals = [avg for _, avg, _ in weekly]
+
+    def _wavg(rows: list) -> float | None:
+        den = sum(n for _, _, n in rows)
+        return sum(avg * n for _, avg, n in rows) / den if den else None
+
+    mid = len(weekly) // 2
+    prior, recent = _wavg(weekly[:mid]), _wavg(weekly[mid:])
+    change = (recent - prior) / prior if (prior and recent is not None) else None
+    if change is None or abs(change) < 0.10:
+        direction = 'flat'
+    else:
+        worse = (change > 0) if lower_is_better else (change < 0)
+        direction = 'worsening' if worse else 'improving'
+    return {
+        'metric':     'reads_before_edit',
+        'weeks':      len(weekly),
+        'sparkline':  _sparkline(vals),
+        'prior':      prior,
+        'recent':     recent,
+        'change_pct': change,
+        'direction':  direction,
+    }
 
 
 def _analyze_transcript(path: str) -> dict | None:
@@ -600,6 +651,7 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         wk = datetime.datetime.fromtimestamp(s['mtime']).strftime('%G-W%V')
         weekly_map.setdefault(wk, []).append(s['reads_before_edit'])
     weekly = [(wk, sum(v) / len(v), len(v)) for wk, v in sorted(weekly_map.items())][-8:]
+    trend = _weekly_trend(weekly)
 
     recent = sorted(all_sessions, key=lambda s: s['mtime'], reverse=True)[:20]
 
@@ -752,6 +804,8 @@ def _collect_audit_inner(store, repo_root: str, days: int,
         'provider':                  AUDIT_PROVIDER,
         'projects':                  project_summaries,
         'weekly':                    weekly,
+        # Direction of the primary metric over the weekly series (None if < 2 weeks).
+        'trend':                     trend,
         'recent':                    recent,
         'leaderboard':               leaderboard,
         'top_failed_commands':       top_failed_commands,
@@ -802,6 +856,20 @@ def cost_headline(data: dict) -> str | None:
     return ' · '.join(parts)
 
 
+_TREND_ARROW = {'worsening': '↑', 'improving': '↓', 'flat': '→'}
+
+
+def trend_line(data: dict) -> str | None:
+    """One-line trend of the primary metric (reads→edit) with sparkline + direction."""
+    t = data.get('trend')
+    if not t:
+        return None
+    pct = f"{t['change_pct']:+.0%}" if t.get('change_pct') is not None else '—'
+    return (f"reads→edit over {t['weeks']} wks  {t['sparkline']}  "
+            f"{t['prior']:.1f}→{t['recent']:.1f} ({pct} {_TREND_ARROW[t['direction']]} "
+            f"{t['direction']})")
+
+
 def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
               as_json: bool = False, reingest: bool = False,
               estimate_cursor: bool = False) -> None:
@@ -845,7 +913,12 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
     print(f"\nAgent session audit — last {days} days\n")
     _hl = cost_headline(data)
     if _hl:
-        print(f"  💸 {_hl}\n")
+        print(f"  💸 {_hl}")
+    _tr = trend_line(data)
+    if _tr:
+        print(f"  📈 {_tr}")
+    if _hl or _tr:
+        print()
     print(f"  Sessions analysed:              {total}")
     print(f"  Avg reads/session:              {data['avg_reads']:.1f}")
     print(f"  Avg reads before first edit:    {data['avg_reads_before_edit']:.1f}  ← primary metric")

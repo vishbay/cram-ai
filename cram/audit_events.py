@@ -90,6 +90,7 @@ class SessionMeta:
     event_mtime: float | None = None  # cursor-db: max bubble createdAt (None if absent)
     external_id: str | None = None    # cursor-db composerId
     cwd: str | None = None            # codex session_meta.cwd (last seen)
+    model: str | None = None          # most-frequent model id (claude/codex; None for cursor)
 
 
 _UUID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
@@ -234,6 +235,7 @@ def parse_claude(path: str) -> tuple[SessionMeta, list[Event]] | None:
     """
     events: list[Event] = []
     seq = 0
+    model_counts: dict[str, int] = {}
     try:
         mtime = os.path.getmtime(path)
         with open(path, errors='ignore') as f:
@@ -242,6 +244,10 @@ def parse_claude(path: str) -> tuple[SessionMeta, list[Event]] | None:
                     msg = json.loads(line)
                 except Exception:
                     continue
+
+                m = msg.get('model') or (msg.get('message') or {}).get('model')
+                if isinstance(m, str) and m:
+                    model_counts[m] = model_counts.get(m, 0) + 1
 
                 for block in _find_all_tool_use(msg):
                     name = block.get('name', '')
@@ -298,7 +304,8 @@ def parse_claude(path: str) -> tuple[SessionMeta, list[Event]] | None:
                     seq += 1
     except Exception:
         return None
-    return SessionMeta('claude', 'claude', path, mtime), events
+    model = max(model_counts, key=model_counts.get) if model_counts else None
+    return SessionMeta('claude', 'claude', path, mtime, model=model), events
 
 
 def parse_cursor_jsonl(path: str) -> tuple[SessionMeta, list[Event]] | None:
@@ -432,6 +439,7 @@ def parse_codex(path: str) -> tuple[SessionMeta, list[Event]] | None:
     events: list[Event] = []
     seq = 0
     session_cwd = ''
+    model: str | None = None
     try:
         mtime = os.path.getmtime(path)
         with open(path, errors='ignore') as f:
@@ -447,6 +455,11 @@ def parse_codex(path: str) -> tuple[SessionMeta, list[Event]] | None:
                 p = obj.get('payload', {})
                 if not isinstance(p, dict):
                     continue
+
+                if not model:
+                    m = p.get('model') or (p.get('info') or {}).get('model')
+                    if isinstance(m, str) and m:
+                        model = m
 
                 if t == 'session_meta':
                     session_cwd = p.get('cwd', '') or ''
@@ -510,7 +523,7 @@ def parse_codex(path: str) -> tuple[SessionMeta, list[Event]] | None:
                                 break
     except Exception:
         return None
-    return SessionMeta('codex', 'codex', path, mtime, cwd=session_cwd), events
+    return SessionMeta('codex', 'codex', path, mtime, cwd=session_cwd, model=model), events
 
 
 # ── Derivation ────────────────────────────────────────────────────────────────
@@ -713,6 +726,8 @@ def derive_session(meta: SessionMeta, events: list[Event],
         'edit_file_counts':        edit_counts,
         # Additive: was a context tool (context-mode) active this session?
         'context_mode':            context_mode,
+        # Model id (for per-session $ attribution); None for Cursor / unrecorded.
+        'model':                   meta.model,
     }
     # Legacy dicts carry a 'source' key only for non-Claude sessions.
     if meta.source != 'claude':

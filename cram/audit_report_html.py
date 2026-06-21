@@ -84,9 +84,15 @@ def _strip(data: dict) -> str:
     total_spend, per_session, cache_hit = _spend(data)
     share = data.get('pre_edit_spend_share')
     growth = data.get('avg_context_growth')
+    # Prefer the real, model-aware monthly $ when measurable; else flat estimate.
+    monthly = data.get('monthly_cost')
+    if data.get('total_eff_cost') and monthly:
+        spend_cell = ('', f'${monthly:,.2f}', '$/mo (measured)')
+    else:
+        spend_cell = ('', f'${total_spend:,.2f}', f'est spend {data["days"]}d')
     cells = [
         ('a', f'{share:.0%}' if share is not None else 'n/a', 'pre-edit share'),
-        ('', f'${total_spend:,.2f}', f'est spend {data["days"]}d'),
+        spend_cell,
         ('g', f'{cache_hit:.0f}%', 'cache hit'),
         ('a', f'{data["avg_reads_before_edit"]:.1f}', 'reads→edit'),
         ('r', f'{growth:.1f}×' if growth is not None else '—', 'ctx growth'),
@@ -116,6 +122,16 @@ def _headline(data: dict) -> str:
         big, unit = 'n/a', 'pre-edit share not measurable'
         desc = ('No edit sessions with token usage in this window — counts and '
                 'estimates below are still valid.')
+    cost = data.get('total_eff_cost') or 0.0
+    if cost:
+        money = (f'💸 <b>~${cost:,.2f}</b> effective input over '
+                 f'{data.get("cost_measured_sessions", 0)} measured session(s) '
+                 f'(~${data.get("monthly_cost") or 0:,.2f}/mo).')
+        big_av = data.get('biggest_avoidable')
+        if big_av and big_av.get('monthly_cost'):
+            money += (f' Biggest avoidable: <b>{_esc(big_av["layer"])}</b> '
+                      f'~${big_av["monthly_cost"]:,.2f}/mo ({_esc(big_av["basis"])}).')
+        desc = money + '<br><br>' + desc
     return f"""
     <div class="panel"><div class="ph">Headline</div>
       <div class="pb headline">

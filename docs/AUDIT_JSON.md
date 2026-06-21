@@ -5,10 +5,10 @@
 
 ## Versioning
 
-Every JSON document carries `schema_version` (currently **`audit/1`**). The top-level
+Every JSON document carries `schema_version` (currently **`audit/2`**). The top-level
 key set of the aggregate document is **stable** — a key is present with `null` rather
 than omitted when it has no value. Bump `schema_version` on any breaking shape change;
-gate your consumer on it.
+gate your consumer on it. (`audit/2` added the real-$ keys below.)
 
 ## Documents
 
@@ -30,6 +30,13 @@ gate your consumer on it.
 - `token_spine`, `spine_tree` — effective-input composition (measured).
 - `layer_costs` — overlapping waste diagnostics; each row has its own `basis`
   (`measured` / `estimated` / `count`).
+- `total_eff_cost`, `monthly_cost`, `cost_per_measured_session`, `cost_measured_sessions` —
+  **measured**, model-aware: effective input-side $ priced per each session's own model
+  (`claude-opus-4-8`, `gpt-5`, …), falling back to the provider flat rate when the model is
+  unrecorded (e.g. Cursor). A floor on real spend (input-side only).
+- `model_mix` — `{model_id: session_count}` over the measured pool.
+- `biggest_avoidable` — the single most expensive avoidable layer `{layer, basis,
+  cost_per_session, monthly_cost, note}` (the largest single layer, not a sum — layers overlap).
 - `orient_cost_per_session`, `monthly_orient_cost` — **estimated** (assumed tokens/file model).
 - `top_read_files`, `leaderboard`, `top_failed_commands`, `weekly`, `recent`, `projects`.
 - `findings` — deterministic rules; each finding has `id`, `severity`, `evidence`, `fix`,

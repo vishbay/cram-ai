@@ -48,6 +48,11 @@ def render_report(data: dict, repo_root: str) -> str:
     lines.append('')
     lines.append('## Headline')
     lines.append('')
+    from cram.audit import cost_headline
+    _hl = cost_headline(data)
+    if _hl:
+        lines.append(f'💸 **{_hl}**')
+        lines.append('')
     if data['pre_edit_spend_share'] is not None:
         n_meas = data['pre_edit_measured_sessions']
         prelim = (f'**Preliminary** — only {n_meas} measured edit session'

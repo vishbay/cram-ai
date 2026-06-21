@@ -6,50 +6,44 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-06-21
+
+The profiler+referee hardening release: the profiler answers "what is this costing me, what do
+I fix first, did the fix work, and is it improving?" — and the referee stops miscounting itself.
+
 ### Added
-- **Trend over time** in `cram audit`: the report leads with the direction of the primary metric
-  (reads-before-edit) over the weekly series — a sparkline plus a session-weighted recent-vs-prior
-  delta tagged `worsening` / `improving` / `flat` ("reads→edit ▁▃▆█ 2.1→5.8 +38% ↑ worsening").
-  Shown in text, markdown, and the HTML dashboard. New JSON `trend` key (`schema_version` →
-  `audit/3`).
-- **Finding → verify loop**: every `cram audit` finding now carries a structured `verify`
-  recipe (`{command, expect}`) — how to *prove* the fix worked, welding the profiler to the
-  referee (`cram rig` for optimizer-style fixes, `cram audit --compare` / re-audit for config
-  fixes). Promoted from a report-only string into the finding data, so it shows in the text,
-  markdown, and HTML reports **and** the JSON contract.
-- **Real, model-aware $ in `cram audit`**: each session's effective input is now priced by the
-  actual model it ran on (`claude-opus-4-8`, `gpt-5`, …; falls back to the provider rate when
-  unrecorded), instead of a flat Sonnet rate. The report leads with a money headline — "~$X
-  effective input · ~$Y/mo · biggest avoidable: <layer> ~$Z/mo" — across text, markdown, and the
-  HTML dashboard. New JSON keys (`schema_version` → `audit/2`): `total_eff_cost`, `monthly_cost`,
-  `cost_per_measured_session`, `cost_measured_sessions`, `model_mix`, `biggest_avoidable`. New
-  `cost_model.resolve_model_price` (override the table via `CRAM_MODEL_PRICES`).
+- **Real, model-aware $** in `cram audit`: each session's effective input is priced by the actual
+  model it ran on (`claude-opus-4-8`, `gpt-5`, …; falls back to the provider rate when unrecorded)
+  instead of a flat Sonnet rate. The report leads with a money headline — "~$X effective input ·
+  ~$Y/mo · biggest avoidable: <layer> ~$Z/mo". New `cost_model.resolve_model_price`
+  (`CRAM_MODEL_PRICES` to override); new keys `total_eff_cost`, `monthly_cost`,
+  `cost_per_measured_session`, `cost_measured_sessions`, `model_mix`, `biggest_avoidable`.
+- **Finding → verify loop**: every finding carries a structured `verify` `{command, expect}` —
+  how to prove the fix worked — welding the profiler to the referee (`cram rig` for optimizer-style
+  fixes, `cram audit --compare` / re-audit for config fixes). In text, markdown, HTML, and JSON.
+- **Trend over time**: a sparkline + session-weighted recent-vs-prior direction
+  (`worsening`/`improving`/`flat`) on the primary metric (reads-before-edit). New `trend` key.
+- **Versioned, stable JSON contract**: `schema_version` (now **`audit/3`**) on the aggregate dict
+  and the `--session`/`--layer`/`--compare` wrappers; stable top-level key set (null, not omitted);
+  a `bases` measured/estimated map. Documented in `docs/AUDIT_JSON.md`.
+- **Findings sample-size gating**: each finding carries `sample_n` + `preliminary` (fewer than 3
+  measured sessions → flagged, not read as a verdict off N=1).
+- `cram rig` UX: live per-cell progress on stderr; self-describing `meta` auto-embedded in
+  `--json`; `--clean-cache`, `--keep-workdirs`, `--model`, `--no-baseline` flags; a
+  required-baseline guard; one clone retry on transient failure.
 
 ### Fixed
-- `cram rig` no longer silently miscounts failures. Each cell now records a precise status
-  (`ran` / `no_transcript` / `unavailable` / `setup_error` / `run_error` / `oracle_timeout`):
-  a runner crash, a workdir/clone error, and an oracle **timeout** are excluded from the success
-  rate instead of being read as a task loss; a passing run with no measurable transcript is
-  counted toward success but its tokens are **not** averaged in as a phantom 0.
+- `cram rig` no longer silently miscounts failures: each cell records a precise status (`ran` /
+  `no_transcript` / `unavailable` / `setup_error` / `run_error` / `oracle_timeout`). A runner
+  crash, clone error, or oracle **timeout** is excluded from the success rate instead of read as
+  a task loss; a passing run with no measurable transcript counts toward success but its tokens
+  are not averaged in as a phantom 0.
 
 ### Changed
 - Repositioned the context layer as the **reference optimizer** `cram rig` benchmarks, not a
-  product claim: `cram --help` now groups commands ("Profile & referee" / "Setup" / "Optional —
-  context layer"); `recommend.py`'s context-layer entry is labelled experimental (one remediation,
-  verify don't assume); "token savings" softened to "model the cache-write cost" in `cram
-  benchmark` help, the `run_benchmark` MCP docstring, and the README.
-
-### Added
-- `cram audit`: a **versioned, stable JSON contract** — every `--json` document (aggregate,
-  `--session`, `--layer`, `--compare`) carries `schema_version` (`audit/1`), the aggregate
-  top-level key set is stable (null, not omitted), and a `bases` map marks each headline cost
-  metric measured/estimated. Documented in `docs/AUDIT_JSON.md`.
-- `cram audit` findings now carry `sample_n` + `preliminary`; a finding based on fewer than 3
-  measured sessions is tagged preliminary (fired, but not read as a verdict off N=1).
-- `cram rig`: live per-cell progress on stderr; self-describing `meta` (model/runner/version/…)
-  auto-embedded in `--json`; `--clean-cache`, `--keep-workdirs`, `--model`, and `--no-baseline`
-  flags; a required-baseline guard; one clone retry on transient failure. `summarize()` now
-  reports a per-provider `failures` breakdown and `unmeasured` count.
+  product claim: grouped `cram --help` ("Profile & referee" / "Setup" / "Optional — context
+  layer"); `recommend.py` labels it experimental; "token savings" softened to "model the
+  cache-write cost" in `cram benchmark`, the MCP docstring, and the README.
 
 ## [0.8.3] — 2026-06-20
 
@@ -169,7 +163,8 @@ benchmark — and the case study reports cram's own context layer honestly (incl
 ### Added
 - Audit-first repositioning: see where your agent tokens go.
 
-[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/vishbay/cram-ai/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/vishbay/cram-ai/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/vishbay/cram-ai/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/vishbay/cram-ai/compare/v0.8.0...v0.8.1

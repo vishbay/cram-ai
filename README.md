@@ -107,9 +107,14 @@ Cursor transcripts carry no token counts, so by default its token metrics show `
 from the sizes of files each session read. It is always labelled **estimated**, tunable via
 `CRAM_CHARS_PER_TOKEN` (default 4), and never mixed into the measured aggregates.
 
-**2. Turns numbers into fixes**
+It reports **real, model-aware dollars** (each session priced by the model it ran on), leads
+with the single most expensive avoidable layer, and shows a **trend** (is your waste improving
+or worsening week over week?).
 
-Findings are deterministic rules, not LLM judgment. Examples:
+**2. Turns numbers into fixes — and proves them**
+
+Findings are deterministic rules, not LLM judgment. Each one carries evidence → fix → a `verify`
+recipe (how to prove the fix worked — usually `cram rig`, welding the profiler to the referee):
 
 | Finding | Evidence | Likely fix |
 |---|---|---|
@@ -118,6 +123,8 @@ Findings are deterministic rules, not LLM judgment. Examples:
 | Cache blind session | cache write without cache read | stabilize prefix / fix cache config |
 | Retry loop | failed commands or repeated same-file edits | record gotcha / improve task recipe |
 | Context growth | late turns keep paying for old output | trim results / tune compaction |
+
+Findings based on very few sessions are tagged **preliminary** — a hint, not a verdict.
 
 **3. Referees optimizers**
 
@@ -181,74 +188,29 @@ Requires Python 3.10+.
 
 ## Quick start
 
-Start with audit. It is local and does not require model calls.
+**1. Profile** — local, no API key. Where do your agent's tokens go?
 
 ```bash
 cd your-repo
-cram audit
-cram audit --report
+cram audit                  # headline $ + trend + findings (each with a verify recipe)
+cram audit --report-html    # shareable dashboard
 ```
 
-Then verify changes with the referee. A controlled corpus compares optimizers only among runs
-that still pass the task oracle:
+**2. Referee** — did an optimization actually help, at fixed task success?
 
 ```bash
 cram rig <corpus.json> --providers baseline,cram --dry-run
 cram rig <corpus.json> --providers baseline,cram
 ```
 
-For real before/after sessions:
+**3. A/B two real checkouts** — before vs after a change:
 
 ```bash
 cram audit --compare ../before ../after
 ```
 
-If the audit shows repeated re-discovery, or you have durable project knowledge agents keep
-missing, you can try the optional context layer:
-
-```bash
-cram init
-cram status
-```
-
-`cram init` gives the agent an immediate repo briefing by generating
-`.ai-context/ARCHITECTURE.md`: a concise map of the project structure, stack, key modules,
-and entry points. It also builds `SYMBOLS.md`, a deterministic file-to-symbol index used to
-pick focused task excerpts.
-
-Fill in the files that matter most:
-
-```bash
-vim .ai-context/DECISIONS.md
-vim .ai-context/GOTCHAS.md
-```
-
-Then use one of the delivery paths.
-
-**MCP path**: configure the `cram mcp` server in your agent and have the agent call:
-
-```text
-get_context("fix the rate limiter")
-```
-
-**File-based path**: write context into a file your agent reads at startup:
-
-```bash
-cram task "fix the rate limiter" --target codex
-cram task "fix the rate limiter" --target cursor
-cram task "fix the rate limiter" --target claude
-```
-
-After a few sessions, measure again. Keep it only if it earns its keep:
-
-```bash
-cram audit
-cram audit --compare ../my-repo-before-cram ../my-repo-after-cram
-```
-
-`--compare` expects two repo checkouts: for example, one checkout before adopting cram
-context and another checkout after adopting it. It prints both audits side by side with
-deltas, so you can see whether the change moved the numbers.
+Optional: if audits show repeated re-discovery, try the [context layer](#optional-the-context-layer)
+— and verify it earns its keep with step 2.
 
 ---
 
@@ -269,19 +231,25 @@ cram audit --compare PATH_A PATH_B # compare two repo checkouts side by side
 cram audit --reingest              # ignore cache and re-parse
 ```
 
-Typical output includes:
+It leads with money and direction, then the findings — each with how to **prove** a fix worked:
 
 ```text
-Avg reads before first edit:    8.2
-Avg edits/session:              3.1
-Avg read-to-edit ratio:         2.6x
-Cache engagement:               18/24 sessions read from cache
+💸 ~$48.20 effective input over 22 sessions · ~$64.30/mo · biggest avoidable: orientation ~$18.40/mo (measured)
+📈 reads→edit over 8 wks  ▁▃▄▆▆▇█  2.1→5.8 (+38% ↑ worsening)
 
-Pre-edit context share (measured):
-  Edit sessions:                16/24
-  Pre-edit context share:       31% of 1,580,000 eff. input tokens
-  Pre-edit spend/session:       ~41,200 eff. tokens
+  Avg reads before first edit:    5.8  ← primary metric
+  Pre-edit context share:         31% of 1,580,000 eff. input tokens
+
+  Findings (1):
+    ⚠ high-orientation   31% of input-side spend lands before the first edit
+      → fix:    Front-load repo context instead of re-discovering it each session.
+      ✓ verify: cram rig <corpus.json> --providers baseline,cram
+                → pre-edit context share drops at fixed task success
 ```
+
+So the audit answers the whole loop: **what it costs · what to fix first · how to prove the fix
+helped · whether it's improving over time.** Dollars are model-aware (each session priced by the
+model it ran on); the trend is a session-weighted recent-vs-prior delta.
 
 The audit is deliberately conservative:
 
@@ -469,248 +437,58 @@ summary. The action is key-free.
 
 ## Optional: the context layer
 
-Everything above is the core of cram — the **profiler** (`cram audit`) and the **referee**
-(`cram rig`), both local and proven on real transcripts. The sections below are an **optional**
-add-on: a small repo-context layer cram can maintain and deliver to your agent. It is useful
-when audits show repeated re-discovery, but it is **experimental as a token-saving mechanism**
-— verify it with `cram rig` or `cram audit --compare` before relying on it (see the case study).
-
----
-
-## Context layer
-
-The context layer is **optional and experimental as an optimizer**. It is one remediation
-among several, not required to use cram. Reach for it when your audit shows repeated
-re-discovery, or when agents need durable repo knowledge that is not obvious from code search.
-The audit and `cram rig` work without it.
+Everything above is the core — the **profiler** and the **referee**. The context layer is an
+**optional, experimental** add-on: the reference optimizer `cram rig` benchmarks. It maintains a
+small `.ai-context/` directory and delivers it to your agent. Reach for it when an audit shows
+repeated re-discovery — but **verify it with `cram rig` / `cram audit --compare` before relying
+on it** (in the case study it helped one localized bug and was neutral-to-negative elsewhere).
 
 ```text
 .ai-context/
-  ARCHITECTURE.md   generated repo map
-  SYMBOLS.md        deterministic symbol index
-  DECISIONS.md      manual architectural decisions
-  GOTCHAS.md        manual foot-guns and production traps
-  CURRENT_TASK.md   generated task-specific context
+  ARCHITECTURE.md  generated repo map      DECISIONS.md  manual architectural decisions
+  SYMBOLS.md       deterministic symbols    GOTCHAS.md    manual foot-guns / prod traps
+  CURRENT_TASK.md  generated per-task context
 ```
 
-`cram init` creates the directory. `cram sync` refreshes generated files. A post-commit hook
-can run sync automatically.
+`cram init` creates it; `cram task "<task>"` (or MCP `get_context("<task>")`) picks relevant
+files and writes `CURRENT_TASK.md`; `cram sync` refreshes generated files; `cram status` reports
+a 0–10 staleness score. The highest-value files are the **manual** ones (`DECISIONS.md`,
+`GOTCHAS.md`) — tacit knowledge not discoverable from syntax; that claim is separate from the
+(unproven) auto-orientation claim.
 
-The highest-value files are expected to be the manual ones:
+**Delivery** — two paths:
 
-- `DECISIONS.md`: "we use cursor pagination", "never call this API directly"
-- `GOTCHAS.md`: "users.email is nullable in prod", "this test needs PYTHONPATH=src"
+- **MCP** (Claude Code, Cursor, Windsurf, Zed, Codex CLI): one server, then have the agent call
+  `get_context("<task>")` at the start of work.
+  ```json
+  { "mcpServers": { "cram-ai": { "command": "cram",
+      "args": ["mcp", "--repo", "/absolute/path/to/your-repo"] } } }
+  ```
+- **File-based** (startup instruction files): `cram task "<task>" --target claude|codex|cursor|
+  windsurf|copilot|gemini|all`. Custom targets go in `.ai-context/config.toml`.
 
-Those facts are not discoverable from syntax alone, which is why they remain useful even as
-models get larger context windows. This curated-knowledge claim is separate from the
-auto-orientation claim and should be tested independently on tacit-knowledge tasks.
-
-When `get_context("task")` or `cram task "task"` runs, cram:
-
-1. reads the symbol index
-2. asks a cheap context model to pick the most relevant files
-3. extracts focused snippets around relevant identifiers
-4. writes `CURRENT_TASK.md`
-
-The goal is not to prevent the agent from reading files. The goal is to reduce blind
-re-discovery and preload durable project knowledge. Treat the generated briefing and excerpts
-as a candidate fix, not a guaranteed savings layer.
+Concurrent agents on one repo are supported (per-task slot files); hosted team dashboards are
+not built yet. Full MCP tool list and budgets: `cram mcp` / `cram status`.
 
 ---
 
-## MCP delivery
+## Model providers (context layer only)
 
-For MCP-capable tools, configure one server:
+**`cram audit` is fully local and calls no model.** Only the optional context layer
+(`cram init`, `cram sync`, `cram task`, `cram decisions --mine`) uses a context model — and it
+can send repo summaries / code excerpts to whatever you configure.
+
+A Claude or Codex **subscription** works via your existing CLI login (no API key). Auto-discovery
+also checks Ollama, LM Studio, Bedrock, Vertex, Azure, and direct Anthropic/OpenAI/Gemini keys.
+Force a CLI with `CRAM_CONTEXT_PROVIDER=claude|codex`, or set an explicit model in
+`~/.config/cram-ai/settings.json`:
 
 ```json
-{
-  "mcpServers": {
-    "cram-ai": {
-      "command": "cram",
-      "args": ["mcp", "--repo", "/absolute/path/to/your-repo"]
-    }
-  }
-}
+{ "context_model": "openai/gpt-4o-mini" }   // or cli/haiku, gemini/…, ollama/…, proxy/custom
 ```
 
-Use your client's native MCP config location. Claude Code, Cursor, Windsurf, Zed, and Codex
-CLI all have MCP support, but their config filenames and formats can differ by version.
-
-Available MCP tools:
-
-| Tool | What it does |
-|---|---|
-| `get_context(task='')` | Builds or reloads focused task context |
-| `get_architecture()` | Returns `ARCHITECTURE.md` |
-| `get_symbols(query='')` | Returns or filters `SYMBOLS.md` |
-| `get_decisions()` | Returns `DECISIONS.md` |
-| `get_gotchas()` | Returns `GOTCHAS.md` |
-| `add_file(path, identifiers='')` | Adds focused excerpts from a file |
-| `get_health()` | Reports staleness and token budgets |
-| `get_task_history(limit=20)` | Shows recent task contexts |
-| `propose_decision(...)` | Adds a pending decision for human review |
-| `run_benchmark()` | Models context delivery costs |
-
-Recommended agent instruction:
-
-```text
-Call get_context("<task>") before starting work, and call it again when the task changes.
-```
-
----
-
-## File-based delivery
-
-For tools that read instruction files at startup:
-
-```bash
-cram task "add pagination to the users endpoint" --target codex
-cram task "add pagination to the users endpoint" --target cursor
-cram task "add pagination to the users endpoint" --target all
-```
-
-Built-in targets:
-
-| Target | File |
-|---|---|
-| `codex` | `AGENTS.md` |
-| `claude` | `CLAUDE.md` |
-| `cursor` | `.cursor/rules/cram-task.md` |
-| `windsurf` | `.windsurf/rules/cram-task.md` |
-| `copilot` | `.github/cram-task.md` |
-| `gemini` | `GEMINI.md` |
-| `all` | all detected targets |
-
-Custom targets live in `.ai-context/config.toml`:
-
-```toml
-[targets.acme]
-file = "ACME.md"
-indicator = "acme.config.json"
-upsert = true
-```
-
-Every file-based target includes command-output protection rules so agents do not accidentally
-carry huge shell output through the rest of a session.
-
----
-
-## Concurrency and team
-
-These are two different things; cram supports one today and not the other.
-
-- **Concurrent agents on one repo — supported now.** Each `get_context("task")` / `cram task`
-  call writes its own slot file under `.ai-context/tasks/<task>.md`, so multiple agents working
-  the same repo at once never overwrite each other's task context. The shared files
-  (`ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `SYMBOLS.md`) are read-mostly and committed,
-  so teammates get the same context layer through normal version control.
-- **Hosted, multi-developer "team" features — not built yet.** Shared dashboards and
-  cross-developer audit rollups may come later around the open core. Today cram runs on a
-  single developer's machine.
-
-In short: concurrent agents, yes; centralized team analytics, not yet.
-
----
-
-## Context health
-
-Context can go stale. cram tracks this with a 0-10 staleness score based on commits since the
-generated context was last refreshed, mapped to a band:
-
-| Score | Band | Meaning |
-|---:|---|---|
-| 0-2 | fresh | context tracks the code |
-| 3-5 | acceptable | minor drift |
-| 6-7 | stale | refresh recommended (`cram sync`) |
-| 8-10 | critical | likely misleading; refresh before relying on it |
-
-Only commits that change repo *structure* count against `ARCHITECTURE.md`: a content-only
-commit leaves it fresh by design, so the score does not creep on every commit.
-
-```bash
-cram status
-cram sync
-```
-
-Health surfaces in:
-
-- `cram status`
-- `get_health()`
-- `get_context()` warnings when context is stale or critical
-
-Soft budgets warn but do not truncate:
-
-| File | Default budget | Override |
-|---|---:|---|
-| `ARCHITECTURE.md` | 3,000 tok | `CRAM_BUDGET_ARCHITECTURE` |
-| `DECISIONS.md` | 1,800 tok | `CRAM_BUDGET_DECISIONS` |
-| `GOTCHAS.md` | 800 tok | `CRAM_BUDGET_GOTCHAS` |
-| `CURRENT_TASK.md` | 2,000 tok | `CRAM_BUDGET_TASK` |
-| `SYMBOLS.md` | none | scales with repo size |
-
----
-
-## Model providers
-
-The audit path is local and does not call a model. The context layer does call a configured
-context model to generate `ARCHITECTURE.md`, mine decisions, and select files for a task.
-
-**Subscription or API key?** If you have a Claude or Codex subscription, cram uses your
-existing CLI login (`claude` / `codex`) — no API key required. API keys are only needed for
-the direct-API providers (Anthropic/OpenAI/Gemini) or hosted gateways below.
-
-Auto-discovery currently checks:
-
-- Claude CLI
-- Codex CLI
-- Ollama
-- LM Studio
-- AWS Bedrock
-- GCP Vertex AI
-- Azure OpenAI
-- direct Anthropic/OpenAI/Gemini API keys
-- a custom proxy
-
-To force a CLI preference in auto mode:
-
-```bash
-export CRAM_CONTEXT_PROVIDER=codex
-# or
-export CRAM_CONTEXT_PROVIDER=claude
-```
-
-To set an explicit context model, edit `~/.config/cram-ai/settings.json`:
-
-```json
-{
-  "context_model": "codex-cli/default"
-}
-```
-
-Other examples:
-
-```json
-{ "context_model": "cli/haiku" }
-{ "context_model": "openai/gpt-4o-mini" }
-{ "context_model": "gemini/gemini-2.0-flash" }
-{ "context_model": "ollama/mistral" }
-{ "context_model": "lmstudio/my-local-model" }
-```
-
-For enterprise gateways:
-
-```json
-{
-  "proxy": {
-    "base_url": "https://gateway.corp/v1",
-    "headers": { "X-Corp-Token": "your-sso-token" }
-  },
-  "context_model": "proxy/custom"
-}
-```
-
-Privacy note: `cram audit` stays local. `cram init`, `cram sync`, `cram decisions --mine`,
-and `cram task` can send repo summaries or code excerpts to your configured context model.
+Enterprise gateways: add a `proxy` block (`base_url` + `headers`) and `"context_model":
+"proxy/custom"`.
 
 ---
 
@@ -799,6 +577,6 @@ Audit-metric changes should be additive and clearly labeled as measured or estim
 
 Apache-2.0. See [LICENSE](LICENSE).
 
-cram is open source and local-first. The local single-developer workflow — audit, event
-store, audit CLI, findings, context layer, and markdown reports — is open source. (Concurrent agents on
-one repo are supported today; see [Concurrency and team](#concurrency-and-team).)
+cram is open source and local-first: the whole single-developer workflow — audit, event store,
+findings, referee, reports, and the optional context layer — is open source. Concurrent agents
+on one repo are supported today; hosted team analytics are not built yet.

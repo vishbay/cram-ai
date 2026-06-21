@@ -957,12 +957,16 @@ def run_audit(repo_root: str, days: int = 30, all_projects: bool = False,
         print(f"  Findings ({len(data['findings'])}):")
         for fd in data['findings']:
             print(f"    ⚠ {fd['id']:<18} {fd['evidence']}")
-            print(f"      → {fd['fix']}")
+            print(f"      → fix:    {fd['fix']}")
             rec = fd.get('recommended')
             if rec:
                 alt = (f"  (alt: {', '.join(rec['alternatives'])})"
                        if rec.get('alternatives') else '')
                 print(f"      ⌁ recommend [{rec['kind']}] {rec['title']}{alt}")
+            v = fd.get('verify')
+            if v:
+                print(f"      ✓ verify: {v['command']}")
+                print(f"                → {v['expect']}")
     print()
     print(f"  Est. orientation tokens/session: ~{data['orient_tokens_per_session']:,.0f}")
     print(f"  Est. orientation cost/session:   ~${data['orient_cost_per_session']:.4f}  "

@@ -40,7 +40,9 @@ gate your consumer on it. (`audit/2` added the real-$ keys below.)
 - `orient_cost_per_session`, `monthly_orient_cost` — **estimated** (assumed tokens/file model).
 - `top_read_files`, `leaderboard`, `top_failed_commands`, `weekly`, `recent`, `projects`.
 - `findings` — deterministic rules; each finding has `id`, `severity`, `evidence`, `fix`,
-  `sample_n`, and `preliminary` (True when based on fewer than 3 measured sessions).
+  `sample_n`, `preliminary` (True when based on fewer than 3 measured sessions), and `verify`
+  (`{command, expect}` — how to prove the fix worked; the referee loop, e.g. `cram rig` or
+  `cram audit --compare`).
 - `parse_failures` — count of transcripts that failed to parse this run (numbers may be
   incomplete; a locked Cursor DB shows up here).
 - `bases` — machine-readable measured/estimated basis for the headline cost aggregates.

@@ -24,6 +24,34 @@ CONTEXT_GROWTH_LIMIT = 5.0    # peak/start context ratio
 # a real signal isn't hidden, but flagged so it's not read as gospel off N=1.
 MIN_SAMPLE = 3
 
+# Finding → how to PROVE a fix worked. This welds the profiler to the referee:
+# for optimizer-style fixes the recipe is `cram rig` (tokens at fixed success);
+# for config fixes it's a re-audit / `--compare`. {command, expect}.
+_VERIFY = {
+    'repeated-reads': {
+        'command': 'cram rig <corpus.json> --providers baseline,cram',
+        'expect':  'cross-session reads drop at equal task success '
+                   '(or A/B two checkouts: cram audit --compare <before> <after>)'},
+    'high-orientation': {
+        'command': 'cram rig <corpus.json> --providers baseline,cram',
+        'expect':  'pre-edit context share drops at fixed task success'},
+    'oversized-results': {
+        'command': 'cram audit --compare <before> <after>',
+        'expect':  'oversized-result count and carried $ fall'},
+    'cache-blind': {
+        'command': 'cram audit   # re-run after fixing the cache prefix/config',
+        'expect':  'cache-engaged sessions rise (cache-blind falls)'},
+    'retry-loops': {
+        'command': 'cram audit   # re-run after recording the failing commands as gotchas',
+        'expect':  'failed tool calls/session fall'},
+    'edit-churn': {
+        'command': 'cram audit --compare <before> <after>',
+        'expect':  'same-file re-edits/session fall'},
+    'context-bloat': {
+        'command': 'cram audit --session <id>   # re-run after tightening output caps / compaction',
+        'expect':  'context growth (peak/start) drops'},
+}
+
 
 def derive_findings(data: dict) -> list[dict]:
     """Return findings for a collect_audit aggregate dict (possibly empty).
@@ -124,11 +152,13 @@ def derive_findings(data: dict) -> list[dict]:
                    'results, or tune compaction before the window fills.',
         })
 
-    # Tag low-sample findings as preliminary (fired, but not gospel off small N).
+    # Tag low-sample findings as preliminary (fired, but not gospel off small N),
+    # and attach the verify recipe (how to prove the fix worked — the referee loop).
     for f in findings:
         n = f.get('sample_n')
         f['preliminary'] = n is not None and n < MIN_SAMPLE
         if f['preliminary']:
             f['evidence'] += f" — preliminary ({n} session{'' if n == 1 else 's'})"
+        f['verify'] = _VERIFY.get(f['id'])
 
     return attach_recommendations(findings)

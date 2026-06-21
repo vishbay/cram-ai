@@ -13,22 +13,13 @@ import os
 
 from cram.audit_events import repo_rel
 
-# Finding id → how to verify the fix worked. Closes the profiler→referee loop:
-# every finding says evidence → fix → how to confirm it landed.
-_VERIFY = {
-    'repeated-reads':   'add the briefing, then `cram audit --compare <before> <after>` '
-                        '(or `cram rig`) — cross-session reads should drop.',
-    'high-orientation': 'front-load context, then re-run `cram audit` and watch the pre-edit '
-                        'share; confirm with `cram rig --providers baseline,cram`.',
-    'oversized-results':'cap the output, then `cram audit --session <id>` — the carried cost '
-                        'should be gone.',
-    'cache-blind':      'fix the prefix/cache config, then `cram audit` — cache-engaged '
-                        'sessions should rise.',
-    'retry-loops':      'record the gotcha, then re-audit — failed tool calls/session should fall.',
-    'edit-churn':       'tighten the task brief, then re-audit — same-file re-edits should fall.',
-    'context-bloat':    'trim results / tune compaction, then `cram audit --session <id>` — '
-                        'growth should drop.',
-}
+
+def _verify_line(fd: dict) -> str | None:
+    """Format a finding's verify recipe (profiler→referee loop) as one line."""
+    v = fd.get('verify')
+    if not v:
+        return None
+    return f"`{v['command']}` → {v['expect']}"
 
 
 def render_report(data: dict, repo_root: str) -> str:
@@ -166,7 +157,7 @@ def render_report(data: dict, repo_root: str) -> str:
         for i, fd in enumerate(findings, 1):
             lines.append(f'{i}. **{fd["id"]}** — {fd["evidence"]}')
             lines.append(f'   → fix: {fd["fix"]}')
-            verify = _VERIFY.get(fd['id'])
+            verify = _verify_line(fd)
             if verify:
                 lines.append(f'   → verify: {verify}')
 

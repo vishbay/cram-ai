@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Finding → verify loop**: every `cram audit` finding now carries a structured `verify`
+  recipe (`{command, expect}`) — how to *prove* the fix worked, welding the profiler to the
+  referee (`cram rig` for optimizer-style fixes, `cram audit --compare` / re-audit for config
+  fixes). Promoted from a report-only string into the finding data, so it shows in the text,
+  markdown, and HTML reports **and** the JSON contract.
 - **Real, model-aware $ in `cram audit`**: each session's effective input is now priced by the
   actual model it ran on (`claude-opus-4-8`, `gpt-5`, …; falls back to the provider rate when
   unrecorded), instead of a flat Sonnet rate. The report leads with a money headline — "~$X

@@ -137,3 +137,30 @@ class TestEndToEnd:
         audit_mod.run_audit(str(tmp_path), days=365, as_json=True)
         parsed = json.loads(capsys.readouterr().out)
         assert parsed['findings'][0]['id'] == 'repeated-reads'
+
+
+# ── verify recipe (profiler → referee loop) ───────────────────────────────────
+
+class TestVerifyLoop:
+    def test_every_finding_carries_a_verify_recipe(self):
+        data = _data(avg_error_results=2.0, avg_edit_churn=3.0,
+                     avg_context_growth=9.0, cache_blind_sessions=3,
+                     sessions_with_big_results=2,
+                     top_read_files=[('hot.py', 9, 5)])
+        findings = derive_findings(data)
+        assert findings
+        for fd in findings:
+            v = fd['verify']
+            assert v and 'command' in v and 'expect' in v
+
+    def test_orientation_findings_point_at_the_referee(self):
+        data = _data(pre_edit_spend_share=0.40, pre_edit_measured_sessions=8,
+                     top_read_files=[('hot.py', 9, 5)])
+        by_id = {f['id']: f for f in derive_findings(data)}
+        assert 'cram rig' in by_id['high-orientation']['verify']['command']
+        assert 'cram rig' in by_id['repeated-reads']['verify']['command']
+
+    def test_config_finding_points_at_compare(self):
+        data = _data(avg_edit_churn=3.0)
+        churn = next(f for f in derive_findings(data) if f['id'] == 'edit-churn')
+        assert 'cram audit --compare' in churn['verify']['command']

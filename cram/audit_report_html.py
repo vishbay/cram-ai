@@ -22,7 +22,6 @@ import os
 import re
 
 from cram.audit_events import repo_rel
-from cram.audit_report import _VERIFY
 from cram.cost_model import get_provider_pricing, resolve_provider
 
 # Pricing resolution mirrors cram.audit so the HTML and text reports agree.
@@ -406,8 +405,9 @@ def _findings(data: dict) -> str:
         return ''
     cards = []
     for fd in findings:
-        verify = _VERIFY.get(fd['id'])
-        ver = (f'<div class="fa"><span class="tag ver">VERIFY</span><span>{_code(verify)}</span></div>'
+        verify = fd.get('verify')
+        ver = (f'<div class="fa"><span class="tag ver">VERIFY</span>'
+               f'<span>{_code(verify["command"])} → {_esc(verify["expect"])}</span></div>'
                if verify else '')
         cards.append(f"""
         <div class="find"><div class="find-t"><span class="fid">{_esc(fd['id'])}</span>

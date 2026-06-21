@@ -5,10 +5,10 @@
 
 ## Versioning
 
-Every JSON document carries `schema_version` (currently **`audit/2`**). The top-level
+Every JSON document carries `schema_version` (currently **`audit/3`**). The top-level
 key set of the aggregate document is **stable** — a key is present with `null` rather
 than omitted when it has no value. Bump `schema_version` on any breaking shape change;
-gate your consumer on it. (`audit/2` added the real-$ keys below.)
+gate your consumer on it. (`audit/2` added the real-$ keys; `audit/3` added `trend`.)
 
 ## Documents
 
@@ -39,6 +39,9 @@ gate your consumer on it. (`audit/2` added the real-$ keys below.)
   cost_per_session, monthly_cost, note}` (the largest single layer, not a sum — layers overlap).
 - `orient_cost_per_session`, `monthly_orient_cost` — **estimated** (assumed tokens/file model).
 - `top_read_files`, `leaderboard`, `top_failed_commands`, `weekly`, `recent`, `projects`.
+- `trend` — direction of the primary metric (reads-before-edit) over the weekly series:
+  `{metric, weeks, sparkline, prior, recent, change_pct, direction}` where `direction` is
+  `worsening` / `improving` / `flat` (null when fewer than 2 weeks of data).
 - `findings` — deterministic rules; each finding has `id`, `severity`, `evidence`, `fix`,
   `sample_n`, `preliminary` (True when based on fewer than 3 measured sessions), and `verify`
   (`{command, expect}` — how to prove the fix worked; the referee loop, e.g. `cram rig` or

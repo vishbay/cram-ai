@@ -6,13 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-06-25
+
 ### Added
+- **Richer HTML report** (`cram audit --report-html`): an SVG composition donut on the token
+  waterfall, an SVG trend sparkline + pre-edit-share gauge in the headline, inline magnitude bars
+  in the session leaderboard, severity-colored waste-layer bars, and gauge bars on key metrics —
+  all self-contained SVG/CSS, dark + light, no external assets.
 - **Ruff** lint in dev deps and a CI `lint` job (`ruff check cram/ tests/`). Config in
   `pyproject.toml` (ignores deliberate compact-style rules). Cleared the existing 90 findings
   (unused imports, placeholder-less f-strings, unused vars).
 
 ### Fixed
+- **Per-model prompt-cache floor**: `utils.cache_min_tokens()` under-reported the cacheable-prefix
+  minimum for non-Opus models (returned 1024 for Sonnet 4.6 and Haiku 4.5; real Anthropic floors are
+  2048 and 4096). Corrected to the per-family floors and unified with `benchmark.py`'s cacheable-prefix
+  check so there is one source of truth.
 - `docs/AUDIT_JSON.md`: the `schema_version` example said `audit/1`; now `audit/3`.
+
+### Changed
+- `cram hook install|uninstall` now manages the git hooks only; the global `~/.claude/CLAUDE.md`
+  SessionStart block is managed separately via `cram hook global-install|global-uninstall`. Removing
+  the post-commit hook no longer strips the global block (and vice-versa). `cram init` still wires up
+  both.
 
 ## [0.9.0] — 2026-06-21
 

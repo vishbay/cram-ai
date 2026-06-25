@@ -5,7 +5,38 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cram.utils import strip_code_fence, call_model
+from cram.utils import strip_code_fence, call_model, cache_min_tokens
+
+
+# ---------------------------------------------------------------------------
+# cache_min_tokens — per-model prompt-cache floor (Anthropic docs)
+# ---------------------------------------------------------------------------
+
+class TestCacheMinTokens:
+    def test_opus_floor_is_4096(self):
+        assert cache_min_tokens('Opus 4.8') == 4096
+        assert cache_min_tokens('anthropic/claude-opus-4-8') == 4096
+
+    def test_haiku_45_floor_is_4096(self):
+        # the bug: 'haiku' lacks 'opus', so the old code returned 1024 (4x too low)
+        assert cache_min_tokens('Haiku 4.5') == 4096
+        assert cache_min_tokens('claude-haiku-4-5-20251001') == 4096
+
+    def test_older_haiku_floor_is_2048(self):
+        assert cache_min_tokens('Claude Haiku 3.5') == 2048
+
+    def test_sonnet_46_floor_is_2048(self):
+        # the bug: old code returned 1024 here, claiming sub-2048 prefixes cache
+        assert cache_min_tokens('Sonnet 4.6') == 2048
+        assert cache_min_tokens('anthropic/claude-sonnet-4-6') == 2048
+
+    def test_older_sonnet_floor_is_1024(self):
+        assert cache_min_tokens('claude-sonnet-4-5') == 1024
+        assert cache_min_tokens('Sonnet 3.7') == 1024
+
+    def test_unknown_defaults_to_2048_not_lowest(self):
+        # an unknown model must not under-report the floor (the dangerous direction)
+        assert cache_min_tokens('some-future-model') == 2048
 
 
 # ---------------------------------------------------------------------------

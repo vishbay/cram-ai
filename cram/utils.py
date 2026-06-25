@@ -284,8 +284,25 @@ def pick_coding_model(available: list[dict]) -> dict | None:
 
 
 def cache_min_tokens(model_name: str) -> int:
-    """Minimum prefix tokens required for prompt caching to activate for this model."""
-    return 4096 if 'opus' in model_name.lower() else 1024
+    """Minimum prefix tokens required for prompt caching to activate.
+
+    Below this floor a prefix silently will not cache — no write, but no read
+    savings either. The floor is model-family dependent (Anthropic prompt-caching
+    docs): Opus 4.x and Haiku 4.5 need 4096; Sonnet 4.6, Fable 5 and older Haiku
+    need 2048; Sonnet 4.5 and older need 1024. A too-low estimate is the dangerous
+    direction — it claims a sub-floor prefix "will cache" when it won't — so an
+    unknown model defaults to the common modern floor (2048), not the lowest.
+    """
+    m = model_name.lower()
+    if 'opus' in m:
+        return 4096
+    if 'haiku' in m:
+        return 4096 if ('4.5' in m or '4-5' in m) else 2048
+    if 'sonnet' in m:
+        # Sonnet 4.6 → 2048; Sonnet 4.5 and older → 1024
+        return 1024 if ('4.5' in m or '4-5' in m or '4.0' in m or '4-0' in m
+                        or 'sonnet-4-2' in m or 'sonnet 3' in m or 'sonnet-3' in m) else 2048
+    return 2048
 
 
 def get_model_recommendations() -> tuple[str, str]:

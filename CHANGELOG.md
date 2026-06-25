@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-06-25
+
+### Added
+- **OKF export** (`cram audit --okf [DIR]`): write the audit's findings as an
+  [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
+  v0.1 bundle — a directory of markdown files with YAML frontmatter (`okf_version` in the bundle
+  root, `type`/`title`/`description`/`tags`/`timestamp` per concept, cram specifics in extension
+  fields). Same `collect_audit()` data as the other reports, serialized into a portable, vendor-
+  neutral format any OKF-aware agent can consume. cram stays OKF-compatible, not OKF-dependent:
+  `--okf` is one output alongside `--report` / `--report-html` / `--json`. No new dependency;
+  deterministic output (injectable timestamp) so the bundle diffs cleanly under version control.
+
 ## [0.10.0] — 2026-06-25
 
 ### Added

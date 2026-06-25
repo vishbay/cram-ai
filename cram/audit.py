@@ -1164,6 +1164,44 @@ def run_report_html(repo_root: str, days: int = 30, all_projects: bool = False,
             pass
 
 
+def run_export_okf(repo_root: str, days: int = 30, all_projects: bool = False,
+                   out_dir: str | None = None, reingest: bool = False,
+                   estimate_cursor: bool = False) -> None:
+    """Write the audit's findings as an Open Knowledge Format (OKF) bundle.
+
+    Same collect_audit() data as the reports, serialized into a directory of
+    markdown files with YAML frontmatter (OKF v0.1) so any OKF-aware agent can
+    consume the findings as durable, version-controlled context. out_dir
+    defaults to 'cram-audit-okf/' in the cwd.
+    """
+    from cram.audit_okf import render_okf_bundle
+
+    store = audit_store.AuditStore.open()
+    try:
+        data = _collect_audit_inner(store, repo_root, days, all_projects, reingest,
+                                    estimate_cursor=estimate_cursor)
+    finally:
+        store.close()
+    if data is None:
+        print(f"No sessions found in the last {days} days.")
+        return
+
+    try:
+        import cram
+        version = getattr(cram, '__version__', None)
+    except Exception:
+        version = None
+
+    out_dir = out_dir or 'cram-audit-okf'
+    files = render_okf_bundle(data, repo_root, version=version)
+    for rel, contents in files.items():
+        path = os.path.join(out_dir, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write(contents)
+    print(f"Wrote OKF bundle ({len(files)} file(s)) to {os.path.abspath(out_dir)}/")
+
+
 def _resolve_root(path: str) -> str:
     from cram.utils import find_git_root
     start = os.path.abspath(path)
@@ -1517,6 +1555,10 @@ def main() -> None:
                              '(to FILE, or cram-audit-report.html if omitted)')
     parser.add_argument('--no-open', action='store_true', dest='no_open',
                         help='With --report-html, do not open the file in a browser')
+    parser.add_argument('--okf', nargs='?', const='', default=None,
+                        dest='okf', metavar='DIR',
+                        help='Export findings as an Open Knowledge Format bundle '
+                             '(to DIR, or cram-audit-okf/ if omitted)')
     parser.add_argument('--session', default=None, metavar='ID',
                         help='Per-request waterfall for one session '
                              '(transcript path or session-id prefix)')
@@ -1559,6 +1601,12 @@ def main() -> None:
         run_report(root, days=args.days, all_projects=args.all_projects,
                    out_path=args.report, reingest=args.reingest,
                    estimate_cursor=args.estimate_cursor)
+        return
+
+    if args.okf is not None:
+        run_export_okf(root, days=args.days, all_projects=args.all_projects,
+                       out_dir=args.okf or None, reingest=args.reingest,
+                       estimate_cursor=args.estimate_cursor)
         return
 
     run_audit(root, days=args.days, all_projects=args.all_projects,

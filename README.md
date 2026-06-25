@@ -29,9 +29,9 @@ cram audit                 # where did this repo's agent sessions spend tokens?
 cram audit --report-html   # same, as a shareable HTML dashboard
 ```
 
-`cram audit` and every variant (`--report`, `--report-html`, `--session`, `--compare`, `--json`)
-are 100% local and deterministic — they never call a model. Only the optional context layer
-(`cram task`) uses an LLM.
+`cram audit` and every variant (`--report`, `--report-html`, `--okf`, `--session`, `--compare`,
+`--json`) are 100% local and deterministic — they never call a model. Only the optional context
+layer (`cram task`) uses an LLM.
 
 [`cram audit --report-html`](#html-report) renders the whole audit as one self-contained file:
 
@@ -226,6 +226,7 @@ cram audit --all                   # all known projects
 cram audit --json                  # machine-readable output
 cram audit --report [FILE]         # shareable markdown
 cram audit --report-html [FILE]    # standalone HTML report (opens in your browser)
+cram audit --okf [DIR]             # findings as an Open Knowledge Format bundle
 cram audit --layer NAME            # drill into one waste class (orientation, repeated, ...)
 cram audit --compare PATH_A PATH_B # compare two repo checkouts side by side
 cram audit --reingest              # ignore cache and re-parse
@@ -397,6 +398,32 @@ claim the text report doesn't.
 
 ---
 
+## OKF export (Open Knowledge Format)
+
+`cram audit --okf` writes the audit's findings as an
+[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
+bundle — a directory of markdown files with YAML frontmatter (OKF v0.1, the Google Cloud spec for
+vendor-neutral agent context) that any OKF-aware agent can read as durable, version-controlled
+knowledge:
+
+```bash
+cram audit --okf            # writes ./cram-audit-okf/
+cram audit --okf DIR        # write to a specific directory
+```
+
+```text
+cram-audit-okf/
+  index.md            okf_version + money headline + finding list
+  findings/<id>.md    one concept per finding: evidence → fix → verify
+```
+
+It's the same `collect_audit()` data as the other reports, serialized into a portable format. So
+cram is **OKF-compatible, not OKF-dependent**: `--okf` is one output alongside `--report`,
+`--report-html`, and `--json`. cram stays the meter; OKF is just a wire format it can speak — and
+the measurement is what feeds it.
+
+---
+
 ## Continuous integration (GitHub Action)
 
 cram ships a GitHub Action that turns an audit into a **sticky pull-request comment** and can
@@ -501,6 +528,7 @@ Enterprise gateways: add a `proxy` block (`base_url` + `headers`) and `"context_
 | `cram audit --layer <name>` | Drill into one waste class (orientation/repeated/redundant/carried/retries/churn) |
 | `cram audit --report [FILE]` | Write a shareable markdown report |
 | `cram audit --report-html [FILE]` | Write a standalone HTML report (opens in your browser) |
+| `cram audit --okf [DIR]` | Export findings as an Open Knowledge Format (OKF v0.1) bundle |
 | `cram audit --compare A B` | Compare two checkouts |
 | `cram init` | Create `.ai-context/` |
 | `cram task "..."` | Build task context |
@@ -514,7 +542,8 @@ Enterprise gateways: add a `proxy` block (`base_url` + `headers`) and `"context_
 | `cram benchmark` | Model the cache-write cost of delivering repo context |
 | `cram rig ...` | Verify optimizers |
 | `cram mcp` | Start the MCP server |
-| `cram hook install\|uninstall` | Manage the git post-commit sync hook |
+| `cram hook install\|uninstall` | Manage git hooks (post-commit sync + commit-msg) |
+| `cram hook global-install\|global-uninstall` | Manage the `~/.claude/CLAUDE.md` block (separate from git hooks) |
 | `cram doctor` | Check setup |
 
 ---

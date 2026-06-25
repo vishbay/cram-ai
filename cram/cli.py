@@ -7,7 +7,7 @@ USAGE = """\
 Usage: cram <command> [args]
 
 Profile & referee  (the core — `audit` is local and needs no API key):
-  audit       [--days N] [--all] [--json] [--report [FILE]] [--report-html [FILE]] [--layer NAME] [--compare A B] [--session ID] [--reingest]  Audit agent sessions: where tokens go + findings; --session waterfall; --report / --report-html
+  audit       [--days N] [--all] [--json] [--report [FILE]] [--report-html [FILE]] [--okf [DIR]] [--layer NAME] [--compare A B] [--session ID] [--reingest]  Audit agent sessions: where tokens go + findings; --session waterfall; --report / --report-html / --okf (OKF bundle)
   rig         <corpus.json> [--providers ...] [--repeats N] [--tier T] [--dry-run] | --observe <optimizer> [--days N] | --leaderboard <glob>  Referee context optimizers: tokens at fixed success (controlled), observational A/B, or a leaderboard
   benchmark   [path]                       Model the cache-write cost of delivering repo context
 

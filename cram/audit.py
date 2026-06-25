@@ -107,6 +107,7 @@ def _weekly_trend(weekly: list, *, lower_is_better: bool = True) -> dict | None:
         'metric':     'reads_before_edit',
         'weeks':      len(weekly),
         'sparkline':  _sparkline(vals),
+        'values':     [round(v, 2) for v in vals],
         'prior':      prior,
         'recent':     recent,
         'change_pct': change,

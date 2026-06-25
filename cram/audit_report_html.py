@@ -18,6 +18,7 @@ report — this renderer only changes presentation, never the claims.
 from __future__ import annotations
 import datetime
 import html
+import math
 import os
 import re
 
@@ -61,6 +62,73 @@ def _code(text: str) -> str:
 
 def _sev(value: float, mid: float, hi: float) -> str:
     return 'sev-hi' if value >= hi else ('sev-md' if value >= mid else 'sev-lo')
+
+
+def _compact(n: float) -> str:
+    """Short magnitude label for chart centers — 264M, 1.2k, 980."""
+    n = float(n)
+    for div, suf in ((1e9, 'B'), (1e6, 'M'), (1e3, 'k')):
+        if abs(n) >= div:
+            s = f'{n / div:.1f}'.rstrip('0').rstrip('.')
+            return f'{s}{suf}'
+    return f'{n:.0f}'
+
+
+def _donut(segments, total: float, center: str, sub: str, size: int = 132) -> str:
+    """SVG ring chart. segments = [(value, css_colour), …]; renders proportional
+    arcs over a track, with a magnitude label in the hole. Pure SVG — no JS."""
+    r = size / 2 - 11
+    c = size / 2
+    circ = 2 * math.pi * r
+    sw = 15
+    arcs = [f'<circle cx="{c}" cy="{c}" r="{r:.2f}" fill="none" stroke="var(--panel3)" '
+            f'stroke-width="{sw}"/>']
+    offset = 0.0
+    for val, colour in segments:
+        if val <= 0 or total <= 0:
+            continue
+        dash = (val / total) * circ
+        arcs.append(
+            f'<circle cx="{c}" cy="{c}" r="{r:.2f}" fill="none" stroke="{colour}" '
+            f'stroke-width="{sw}" stroke-dasharray="{dash:.2f} {circ - dash:.2f}" '
+            f'stroke-dashoffset="{-offset:.2f}" '
+            f'transform="rotate(-90 {c} {c})" stroke-linecap="butt"/>')
+        offset += dash
+    return (f'<svg class="donut" viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
+            f'role="img" aria-label="composition">{"".join(arcs)}'
+            f'<text class="donut-c" x="{c}" y="{c - 1}" text-anchor="middle">{_esc(center)}</text>'
+            f'<text class="donut-s" x="{c}" y="{c + 15}" text-anchor="middle">{_esc(sub)}</text></svg>')
+
+
+def _spark_svg(values, colour: str = 'var(--accent)', w: int = 132, h: int = 30) -> str:
+    """Inline area sparkline from a numeric series (empty string if < 2 points)."""
+    vals = [float(v) for v in (values or [])]
+    if len(vals) < 2:
+        return ''
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1.0
+    pad = 3.0
+    n = len(vals)
+    pts = []
+    for i, v in enumerate(vals):
+        x = pad + i * (w - 2 * pad) / (n - 1)
+        y = pad + (1 - (v - lo) / rng) * (h - 2 * pad)
+        pts.append((x, y))
+    line = ' '.join(f'{x:.1f},{y:.1f}' for x, y in pts)
+    area = f'{pad:.1f},{h - pad:.1f} {line} {w - pad:.1f},{h - pad:.1f}'
+    lx, ly = pts[-1]
+    return (f'<svg class="spark" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
+            f'preserveAspectRatio="none" aria-hidden="true">'
+            f'<polyline points="{area}" fill="{colour}" opacity="0.12" stroke="none"/>'
+            f'<polyline points="{line}" fill="none" stroke="{colour}" stroke-width="1.6" '
+            f'stroke-linejoin="round" stroke-linecap="round"/>'
+            f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.3" fill="{colour}"/></svg>')
+
+
+def _meter(frac: float, cls: str = '') -> str:
+    """A thin proportional gauge bar, frac in [0,1]."""
+    w = max(0.0, min(1.0, frac)) * 100
+    return f'<div class="meter"><div class="meter-f {cls}" style="width:{w:.0f}%"></div></div>'
 
 
 def _spend(data: dict) -> tuple[float, float, float]:
@@ -135,13 +203,24 @@ def _headline(data: dict) -> str:
     if tr:
         pct = f"{tr['change_pct']:+.0%}" if tr.get('change_pct') is not None else '—'
         arrow = {'worsening': '↑', 'improving': '↓', 'flat': '→'}[tr['direction']]
-        desc = (f'📈 reads→edit over {tr["weeks"]} wks <span class="mono">'
-                f'{_esc(tr["sparkline"])}</span> {tr["prior"]:.1f}→{tr["recent"]:.1f} '
-                f'(<b>{pct} {arrow} {_esc(tr["direction"])}</b>).<br><br>' + desc)
+        scolour = {'worsening': 'var(--red)', 'improving': 'var(--green)',
+                   'flat': 'var(--muted)'}[tr['direction']]
+        spark = _spark_svg(tr.get('values'), colour=scolour, w=120, h=26)
+        viz = spark or f'<span class="mono">{_esc(tr["sparkline"])}</span>'
+        desc = (f'<div class="trend"><span class="trend-viz">{viz}</span>'
+                f'<span>reads→edit over {tr["weeks"]} wks · {tr["prior"]:.1f}→{tr["recent"]:.1f} '
+                f'(<b style="color:{scolour}">{pct} {arrow} {_esc(tr["direction"])}</b>)</span></div>'
+                + desc)
+    # A two-segment gauge that visualises the headline share directly.
+    gauge = ''
+    if share is not None:
+        gauge = (f'<div class="hl-gauge"><div class="hl-gauge-f" style="width:{share * 100:.0f}%">'
+                 f'</div></div><div class="hl-gauge-l"><span class="a">■ pre-edit {share:.0%}</span>'
+                 f'<span class="dim">■ post-edit {1 - share:.0%}</span></div>')
     return f"""
     <div class="panel"><div class="ph">Headline</div>
       <div class="pb headline">
-        <div><div class="hl-big">{_esc(big)}</div><div class="hl-u">{_esc(unit)}</div></div>
+        <div class="hl-kpi"><div class="hl-big">{_esc(big)}</div><div class="hl-u">{_esc(unit)}</div>{gauge}</div>
         <div class="hl-d">{desc}</div>
       </div></div>"""
 
@@ -200,6 +279,7 @@ def _waterfall(data: dict) -> str:
         total = tree['total']
         pool = tree['pool_sessions'] or 1
         comps = sorted(tree['components'], key=lambda c: c['eff'], reverse=True)
+        dseg = [(c['eff'], _COMP_GRAD.get(c['label'], '#5b9dff')) for c in comps]
         stops, cum = [], 0.0
         for c in comps:
             w = (c['eff'] / total * 100) if total else 0
@@ -235,6 +315,7 @@ def _waterfall(data: dict) -> str:
                         ('fresh input', spine.get('fresh_input', 0)),
                         ('cache write', spine.get('cache_write', 0))],
                        key=lambda kv: kv[1], reverse=True)
+        dseg = [(val, _COMP_GRAD.get(label, '#5b9dff')) for label, val in comps]
         stops, cum = [], 0.0
         for label, val in comps:
             w = (val / total * 100) if total else 0
@@ -252,9 +333,17 @@ def _waterfall(data: dict) -> str:
                                 cls[0], f'{pct * 100:.0f}%', val, f'{pct * 100:.0f}%',
                                 f'~${val * base / n_all:.3f}/s'))
         sub = 'all sessions · composition only (no measured edit pool for pre/post)'
+    legend = ''.join(
+        f'<span class="dl-i"><span class="dl-d" style="background:{colour}"></span>'
+        f'{_esc(label)} <b>{val / total * 100:.0f}%</b></span>'
+        for (label, val), (_v, colour) in zip(
+            [(c['label'], c['eff']) for c in comps] if tree else comps, dseg)
+        if total) if total else ''
+    donut = (f'<div class="wf-donut">{_donut(dseg, total, _compact(total), "eff tok")}'
+             f'<div class="dl">{legend}</div></div>')
     return f"""
     <div class="panel" id="wf"><div class="ph">Token waterfall <span class="sub">{_esc(sub)}</span></div>
-      <div class="pb wf">{''.join(rows)}</div></div>"""
+      <div class="pb wf-grid">{donut}<div class="wf">{''.join(rows)}</div></div></div>"""
 
 
 # ── retry loops ──────────────────────────────────────────────────────────────
@@ -335,6 +424,7 @@ def _leaderboard(data: dict, drilldowns: dict, repo_root: str) -> str:
     board = data.get('leaderboard') or []
     if not board:
         return ''
+    max_inp = max((s.get('input_tokens', 0) or 0 for s in board), default=0)
     rows = []
     for s in board:
         sid = str(s.get('session_id', ''))
@@ -346,8 +436,10 @@ def _leaderboard(data: dict, drilldowns: dict, repo_root: str) -> str:
         cr, cw = s.get('cache_reads', 0), s.get('cache_writes', 0)
         denom = inp + cr + cw
         hit = f'{cr / denom * 100:.0f}%' if denom else '—'
+        ifrac = (inp / max_inp) if max_inp else 0
         rows.append(f'<tr><td class="mono">{sid8}</td><td><span class="badge {badge}">{_esc(src)}</span></td>'
-                    f'<td class="num">{inp:,}</td><td class="num {_sev(rbe, 8, 15)}">{rbe}</td>'
+                    f'<td class="num barcell">{inp:,}<i style="transform:scaleX({ifrac:.3f})"></i></td>'
+                    f'<td class="num {_sev(rbe, 8, 15)}">{rbe}</td>'
                     f'<td class="num">{hit}</td><td class="num {_sev(g or 0, 2, 4)}">{f"{g:.1f}×" if g else "—"}</td>'
                     f'<td class="num {_sev(s.get("error_results", 0), 1, 3)}">{s.get("error_results", 0)}</td></tr>')
         tl = drilldowns.get(sid) or drilldowns.get(sid8)
@@ -389,9 +481,10 @@ def _layers(data: dict, layers: dict, repo_root: str) -> str:
     for name in _LAYER_ORDER:
         contrib = layers.get(name) or []
         fill, val = _layer_fill_value(name, data, contrib)
+        scls = 'fl-hi' if fill >= 0.66 else ('fl-md' if fill >= 0.33 else 'fl-lo')
         blocks.append(f'<div class="lay"><span class="lay-n">{_esc(name)}</span>'
                       f'<span class="lay-d">{_esc(_LAYER_DESC[name])}</span>'
-                      f'<div class="lay-tr"><div class="lay-fl" style="width:{fill * 100:.0f}%"></div></div>'
+                      f'<div class="lay-tr"><div class="lay-fl {scls}" style="width:{fill * 100:.0f}%"></div></div>'
                       f'<span class="lay-v">{_esc(val)}</span></div>')
         if contrib:
             items = ''.join(f'<tr><td>{_esc(format_layer_row(name, r, repo_root))}</td></tr>'
@@ -469,9 +562,10 @@ def _context_ab(data: dict) -> str:
 
 # ── key metrics ──────────────────────────────────────────────────────────────
 
-def _metric(val, label, basis, cls=''):
+def _metric(val, label, basis, cls='', gauge=None, gcls=''):
+    g = _meter(gauge, gcls) if gauge is not None else ''
     return (f'<div class="m"><div class="m-v {cls}">{_esc(val)}</div>'
-            f'<div class="m-l">{_esc(label)}</div><div class="m-b">{_esc(basis)}</div></div>')
+            f'<div class="m-l">{_esc(label)}</div><div class="m-b">{_esc(basis)}</div>{g}</div>')
 
 
 def _metrics(data: dict) -> str:
@@ -479,16 +573,22 @@ def _metrics(data: dict) -> str:
     cards = [
         _metric(f'${total_spend:,.2f}', f'Est input-side spend, {data["days"]}d', 'measured × price'),
         _metric(f'${per_session:.4f}', 'Avg cost / session', f'{data["sessions"]} sessions'),
-        _metric(f'{cache_hit:.0f}%', 'Cache hit rate', 'cache read / total', 'g'),
-        _metric(f'{data["avg_reads_before_edit"]:.1f}', 'Reads before first edit', 'measured avg'),
+        _metric(f'{cache_hit:.0f}%', 'Cache hit rate', 'cache read / total', 'g',
+                gauge=cache_hit / 100, gcls='g'),
+        _metric(f'{data["avg_reads_before_edit"]:.1f}', 'Reads before first edit', 'measured avg',
+                gauge=min(1, data['avg_reads_before_edit'] / 15),
+                gcls=_sev(data['avg_reads_before_edit'], 8, 15).replace('sev-', 'fl-')),
         _metric(f'{data["avg_ratio"]:.1f}×', 'Read-to-edit ratio', f'measured · {data["ratio_band"]}'),
     ]
     if data.get('avg_context_growth') is not None:
         g = data['avg_context_growth']
-        cards.append(_metric(f'{g:.1f}×', 'Context growth, peak/start', 'measured', 'r' if g > 3 else ''))
+        cards.append(_metric(f'{g:.1f}×', 'Context growth, peak/start', 'measured', 'r' if g > 3 else '',
+                             gauge=min(1, g / 5), gcls='fl-hi' if g > 3 else 'fl-md'))
     if data.get('peak_context'):
         pk = data['peak_context']
-        cards.append(_metric(f'{pk / 200_000 * 100:.0f}%', 'Ctx window used', f'{pk:,} / 200k'))
+        cards.append(_metric(f'{pk / 200_000 * 100:.0f}%', 'Ctx window used', f'{pk:,} / 200k',
+                             gauge=min(1, pk / 200_000),
+                             gcls='fl-hi' if pk > 200_000 else 'fl-md'))
     if data.get('avg_requests'):
         cards.append(_metric(f'{data["avg_requests"]:.0f}', 'Requests / session', 'measured'))
     return f"""
@@ -627,11 +727,41 @@ details[open] summary::before{content:'▾'}
 .m-v{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--heading)}.m-v.g{color:var(--green)}.m-v.r{color:var(--red)}
 .m-l{font-size:10.5px;color:var(--muted);margin-top:4px}.m-b{font-family:var(--mono);font-size:9.5px;color:var(--border2);margin-top:4px}
 .ab .delta-good{color:var(--green)}.ab .delta-bad{color:var(--red)}
+/* SVG donut + legend */
+.donut{display:block}
+.donut-c{font-family:var(--mono);font-size:21px;font-weight:700;fill:var(--heading)}
+.donut-s{font-family:var(--mono);font-size:9px;fill:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.wf-grid{display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center;padding:14px 16px}
+.wf-donut{display:flex;flex-direction:column;align-items:center;gap:10px}
+.dl{display:flex;flex-direction:column;gap:4px}
+.dl-i{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.dl-i b{color:var(--heading)}
+.dl-d{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+/* inline sparkline */
+.spark{display:block;overflow:visible}
+.trend{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.trend-viz{flex-shrink:0;line-height:0}
+/* headline KPI + share gauge */
+.hl-kpi{min-width:160px}
+.hl-gauge{height:7px;background:var(--panel3);border-radius:4px;overflow:hidden;margin-top:14px}
+.hl-gauge-f{height:100%;background:var(--accent);border-radius:4px}
+.hl-gauge-l{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;margin-top:5px}
+.hl-gauge-l .a{color:var(--accent)}
+/* leaderboard inline magnitude bar */
+.barcell{position:relative}
+.barcell>i{position:absolute;left:10px;bottom:3px;width:calc(100% - 20px);height:2px;background:var(--accent);opacity:.55;border-radius:2px;transform-origin:left;display:block}
+/* severity fills (shared by layer bars + metric gauges) */
+.fl-hi{background:var(--red)!important}.fl-md{background:var(--amber)!important}.fl-lo{background:var(--green)!important}
+.lay-tr{height:6px}
+/* metric gauge */
+.meter{height:3px;background:var(--panel3);border-radius:2px;overflow:hidden;margin-top:9px}
+.meter-f{height:100%;background:var(--accent);border-radius:2px}
+.meter-f.g{background:var(--green)}
 .foot{margin-top:26px;padding:12px 0;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
 .foot .u{color:var(--green)}.foot .p{color:var(--accent)}
 .cur{display:inline-block;width:7px;height:13px;background:var(--green);vertical-align:middle;animation:bl 1.1s steps(1) infinite}
 @keyframes bl{50%{opacity:0}}
-@media(max-width:880px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;padding:8px 0}.side-h{display:none}.side a{border-left:none;padding:5px 12px}.strip{grid-template-columns:repeat(3,1fr)}.mgrid{grid-template-columns:repeat(2,1fr)}.headline{grid-template-columns:1fr}.wf-row{grid-template-columns:104px 1fr 78px 70px}.wf-p{display:none}.lay{grid-template-columns:90px 1fr 90px}.lay-d{display:none}}
+@media(max-width:880px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;padding:8px 0}.side-h{display:none}.side a{border-left:none;padding:5px 12px}.strip{grid-template-columns:repeat(3,1fr)}.mgrid{grid-template-columns:repeat(2,1fr)}.headline{grid-template-columns:1fr}.wf-grid{grid-template-columns:1fr}.wf-row{grid-template-columns:104px 1fr 78px 70px}.wf-p{display:none}.lay{grid-template-columns:90px 1fr 90px}.lay-d{display:none}}
 """
 
 _JS = r"""

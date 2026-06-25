@@ -354,18 +354,31 @@ def uninstall_hook(repo_root: str = '.') -> None:
 def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description='Manage cram git hooks')
-    parser.add_argument('action', choices=['install', 'uninstall'], default='install', nargs='?')
+    parser.add_argument(
+        'action',
+        choices=['install', 'uninstall', 'global-install', 'global-uninstall'],
+        default='install', nargs='?',
+    )
     parser.add_argument('path', nargs='?', default='.')
     args = parser.parse_args()
+
+    # The global ~/.claude/CLAUDE.md block (SessionStart context loading) is a
+    # separate concern from the per-repo git hooks. They are managed by distinct
+    # actions so that removing the post-commit hook never strips a user's global
+    # instructions, and vice-versa. (`cram init` still wires up both.)
+    if args.action == 'global-install':
+        install_global_claude_md()
+        return
+    if args.action == 'global-uninstall':
+        uninstall_global_claude_md()
+        return
 
     from cram.utils import find_git_root
     path = find_git_root(args.path)
     if args.action == 'uninstall':
         uninstall_hook(path)
-        uninstall_global_claude_md()
     else:
         install_hook(path)
-        install_global_claude_md()
 
 
 if __name__ == '__main__':

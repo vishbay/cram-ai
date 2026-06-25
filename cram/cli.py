@@ -14,7 +14,8 @@ Profile & referee  (the core — `audit` is local and needs no API key):
 Setup:
   init        [path] [--team]              One-time repo setup (--team adds GitHub Actions workflows)
   doctor      [path]                       Check setup: models, hooks, git, context files
-  hook        install|uninstall [path]     Manage the git post-commit hook
+  hook        install|uninstall [path]     Manage git hooks (post-commit + commit-msg)
+              global-install|global-uninstall   Manage the ~/.claude/CLAUDE.md block (separate from git hooks)
 
 Optional — context layer  (the reference optimizer `cram rig` benchmarks; experimental, not the product):
   task        "<description>" [--target T] Populate CURRENT_TASK.md and auto-load into your tool

@@ -43,14 +43,6 @@ _SRC_EXTS = {
 }
 _SKIP_FILES = {'package-lock.json', 'yarn.lock', 'poetry.lock', 'Cargo.lock', 'pnpm-lock.yaml'}
 
-# Minimum cacheable prefix per model family. Below this nothing caches —
-# no write, but no read savings either, so the frozen layer must clear it.
-_CACHE_MIN: dict[str, int] = {
-    'Opus 4.8':   4096,
-    'Sonnet 4.6': 2048,
-    'Haiku 4.5':  4096,
-}
-
 # Frozen layer = the stable, cached prefix. Volatile layer = per-task payload.
 _FROZEN_FILES   = ('ARCHITECTURE.md', 'SYMBOLS.md', 'DECISIONS.md', 'GOTCHAS.md')
 _VOLATILE_FILES = ('CURRENT_TASK.md',)
@@ -192,9 +184,12 @@ def run_benchmark(root: str) -> None:
     print()
 
     # ── Cache-minimum check (frozen layer must be cacheable) ──────
+    # Below the per-model floor nothing caches — no write, but no read savings
+    # either — so the frozen layer must clear it. Floor source: utils.cache_min_tokens.
+    from cram.utils import cache_min_tokens
     print("  Cacheable-prefix check  (frozen layer must clear the minimum)")
     for model, _ in MODEL_BASE.items():
-        floor = _CACHE_MIN[model]
+        floor = cache_min_tokens(model)
         ok    = frozen_tok >= floor
         mark  = '✓' if ok else '✗'
         note  = '' if ok else '  ← below minimum: prefix will NOT cache (sync more context)'

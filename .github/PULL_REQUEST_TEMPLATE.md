@@ -14,6 +14,7 @@
 ## Checklist
 
 - [ ] `python -m pytest -q` passes locally
+- [ ] `ruff check cram/ tests/` passes locally
 - [ ] Added/updated tests for the change
 - [ ] Added a bullet to the `## [Unreleased]` section of `CHANGELOG.md`
 - [ ] Kept the `measured` / `estimated` / `count` distinction intact (no estimate presented as a measurement)

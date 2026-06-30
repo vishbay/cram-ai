@@ -244,6 +244,12 @@ def parse_claude(path: str) -> tuple[SessionMeta, list[Event]] | None:
                     msg = json.loads(line)
                 except Exception:
                     continue
+                # A valid-JSON-but-non-dict line (e.g. a bare `null`, number, or
+                # string) must be skipped, not walked: calling .get() on it would
+                # raise and drop the *entire* session via the outer guard. Mirrors
+                # parse_codex / parse_cursor_jsonl.
+                if not isinstance(msg, dict):
+                    continue
 
                 m = msg.get('model') or (msg.get('message') or {}).get('model')
                 if isinstance(m, str) and m:

@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **`parse_claude` dropped a whole session on one non-dict JSONL line.** A line that
+  was valid JSON but not an object (a bare `null`, number, or string) caused `.get()`
+  to raise, tripping the function-level guard and returning `None` for the *entire*
+  transcript — silently excluding the session from the audit. Now skipped per-line,
+  matching `parse_codex` / `parse_cursor_jsonl`.
+
+### Added
+- **`tests/test_audit_events.py`**: direct unit coverage for the transcript adapters
+  (`parse_claude` / `parse_codex` / `parse_cursor_jsonl` / `parse_cursor_db`) and the
+  pure helpers — per-adapter classification, malformed/non-dict/non-UTF-8 input
+  robustness, the recursion-depth cap on hostile nesting, and the derivation gate.
+  The parsing core handles untrusted input (`SECURITY.md`) but had no adapter-level
+  suite; this is what surfaced the `parse_claude` fix above.
+
+### Removed
+- **`cram/suggest.py`**: dead code (a branch-name → task heuristic) that nothing has
+  imported since it was added in the v0.1.0 tray-app era. No behavior change.
+
 ## [0.11.1] — 2026-06-30
 
 Documentation and accuracy fixes; no functional changes.

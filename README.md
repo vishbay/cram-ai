@@ -230,6 +230,7 @@ cram audit --okf [DIR]             # findings as an Open Knowledge Format bundle
 cram audit --layer NAME            # drill into one waste class (orientation, repeated, ...)
 cram audit --compare PATH_A PATH_B # compare two repo checkouts side by side
 cram audit --reingest              # ignore cache and re-parse
+cram audit --path /other/repo      # audit a repo you're not cd'd into
 ```
 
 It leads with money and direction, then the findings — each with how to **prove** a fix worked:
@@ -323,16 +324,23 @@ cram rig <corpus.json> --providers baseline,cram,claude-context
 cram rig <corpus.json> --repeats 3 --tier small   # N runs/cell, one tier
 cram rig <corpus.json> --dry-run
 cram rig <corpus.json> --runner codex
+cram rig <corpus.json> --json --model sonnet-4.6 > results/run-1.json  # save for leaderboard
 cram rig --observe cram --days 30
 cram rig --leaderboard 'examples/rig/bench/results/*.json'
 cram rig --clean-cache                              # drop the shared clone cache
 ```
 
 A self-contained, tiered benchmark ships in [`examples/rig/bench/`](examples/rig/bench) —
-`cram-bench-v1`, small/medium/large tasks that ship red, no external repo to clone. Run it,
-commit the result JSON (it carries self-describing `meta` — model, runner, version), and render
-a ranked leaderboard with `--leaderboard`. `--repeats N` runs each cell N times so the summary
-reports variance.
+`cram-bench-v1`, small/medium/large tasks that ship red, no external repo to clone. To build a
+leaderboard across runs, produce a result JSON with `--json`, label it with `--model` (recorded
+in the file's `meta` so rows from different models are distinguishable), and commit it:
+
+```bash
+cram rig corpus.json --providers baseline,cram --json --model claude-sonnet-4-6 > results/run-1.json
+cram rig --leaderboard 'results/*.json'
+```
+
+`--repeats N` runs each cell N times so the summary reports variance.
 
 The referee is honest about its own failure modes: each cell records a precise status, so a
 run error, an oracle timeout, or a missing transcript is **excluded** from the success rate
@@ -529,6 +537,16 @@ jobs:
 | `compare` | two audit JSONs | posts a token-waste delta table |
 | `report` | one `cram audit --json` | posts the markdown audit report |
 | `rig` | baseline + candidate `cram rig --json` | **fails the check** if candidate success drops more than `tolerance` |
+
+Action inputs:
+
+| Input | Description |
+|---|---|
+| `file-a`, `file-b` | baseline + candidate JSONs (`compare` / `rig` modes) |
+| `compare-json` | a single `cram audit --compare ... --json` document (alternative to `file-a`/`file-b` for `compare`) |
+| `report-json` | a single `cram audit --json` document (`report` mode) |
+| `tolerance` | allowed success-rate drop before `rig` mode fails the check (default `0.0`) |
+| `out` | also write the rendered markdown to this file path (useful for job summaries) |
 
 `cram init --team` drops a starter `cram-audit.yml` (and `cram-sync.yml`) into
 `.github/workflows/`. On fork PRs where commenting is blocked, the action falls back to the job

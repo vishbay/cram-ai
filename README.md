@@ -622,19 +622,22 @@ Enterprise gateways: add a `proxy` block (`base_url` + `headers`) and `"context_
 | `cram audit --report-html [FILE]` | Write a standalone HTML report (opens in your browser) |
 | `cram audit --okf [DIR]` | Export findings as an Open Knowledge Format (OKF v0.1) bundle |
 | `cram audit --compare A B` | Compare two checkouts |
-| `cram init` | Create `.ai-context/` |
+| `cram init [path]` | Create `.ai-context/` (defaults to cwd; pass a path for non-cwd repos) |
 | `cram task "..."` | Build task context |
 | `cram add <file>` | Add a file to current task context |
+| `cram add <file> --replace` | Replace an existing excerpt for that file instead of appending |
+| `cram add <file> --target claude\|codex\|all` | Also write the added excerpt into a tool's instruction file |
 | `cram sync` | Refresh generated context |
 | `cram continue` | Extend the task grace period before a commit resets context |
 | `cram status` | Check freshness and budgets |
 | `cram decide "..."` | Add a decision |
 | `cram gotcha "..."` | Add a gotcha |
 | `cram decisions --mine` | Mine git history for decision candidates |
+| `cram decisions --mine --days N` | Limit git history scan to N days (default 90) |
 | `cram benchmark` | Model the cache-write cost of delivering repo context |
 | `cram rig ...` | Verify optimizers |
 | `cram mcp` | Start the MCP server |
-| `cram hook install\|uninstall` | Manage git hooks (post-commit sync + commit-msg) |
+| `cram hook install\|uninstall [path]` | Manage git hooks (post-commit sync + commit-msg); path defaults to cwd |
 | `cram hook global-install\|global-uninstall` | Manage the `~/.claude/CLAUDE.md` block (separate from git hooks) |
 | `cram doctor` | Check setup |
 
@@ -650,8 +653,10 @@ Enterprise gateways: add a `proxy` block (`base_url` + `headers`) and `"context_
 | `CRAM_PRICE_INPUT_PER_MTOK` | provider default | Override input price for cost estimates |
 | `CRAM_CACHE_WRITE_MULT` | provider default | Override cache-write multiplier |
 | `CRAM_CACHE_READ_MULT` | provider default | Override cache-read multiplier |
+| `CRAM_MODEL_PRICES` | built-in table | JSON blob overriding per-model input prices ($/MTok) — useful for custom or enterprise models: `'{"my-model": 2.50}'` |
 | `CRAM_AUDIT_TOK_PER_FILE` | `2500` | Tokens assumed per orientation file read in older cost modeling |
 | `CRAM_AUDIT_BIG_RESULT_BYTES` | `20000` | Threshold for oversized tool result findings |
+| `CRAM_DEBUG` | unset | Set to `1` to log transcript paths when the audit warns "numbers may be incomplete" |
 | `AICONTEXT_MAX_FILES` | `5` | Max files in task context |
 | `AICONTEXT_MAX_LINES` | `300` | Max excerpt lines per file |
 | `CRAM_TASK_GRACE_SECONDS` | `600` | Grace period before commit resets task context |
@@ -660,6 +665,11 @@ Enterprise gateways: add a `proxy` block (`base_url` + `headers`) and `"context_
 | `CRAM_BUDGET_DECISIONS` | `1800` | Soft token budget |
 | `CRAM_BUDGET_GOTCHAS` | `800` | Soft token budget |
 | `CRAM_BUDGET_TASK` | `2000` | Soft token budget |
+| `CLAUDE_CODE_EXECPATH` | `claude` | Override the `claude` binary path (useful in CI or nix/mise installs) |
+| `CODEX_EXECPATH` | `codex` | Override the `codex` binary path |
+| `CRAM_OLLAMA_TIMEOUT` | generous | Override the Ollama model call timeout (seconds) |
+| `CRAM_CODEX_TIMEOUT` | `300` | Override the Codex CLI timeout during `cram task` (seconds) |
+| `CRAM_CLAUDE_CONTEXT_CMD` | `npx -y @zilliz/claude-context-mcp@latest` | Override the command used to launch the `claude-context` MCP server in `cram rig` |
 
 `AICONTEXT_MODEL` is still supported by the older `call_model()` fallback path, but explicit
 context-model routing should use `~/.config/cram-ai/settings.json`.

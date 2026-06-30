@@ -365,6 +365,80 @@ Runners (controlled mode — pick with `--runner`):
 Both reuse the existing CLI login (no API key). More agent runners can be added behind the same
 corpus/oracle interface.
 
+### Writing your own corpus
+
+A corpus is a JSON file with a `tasks` array. Each task needs an `id`, a `prompt`, a code
+source, and a success oracle.
+
+```json
+{
+  "tasks": [
+    {
+      "id": "fix-median-bug",
+      "prompt": "Run pytest -q. One test fails because of a bug in stats.py. Fix stats.py so all tests pass. Do not edit the tests.",
+      "fixture": "fixtures/fix-median-bug",
+      "check": ["python", "-m", "pytest", "-q"]
+    }
+  ]
+}
+```
+
+**Task fields:**
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | yes | Unique identifier (used in output and workdir paths — stick to `[a-z0-9-]`) |
+| `prompt` | yes | Sent verbatim to the agent |
+| `fixture` | one of | Local directory copied into a throwaway workdir; path is relative to the corpus file |
+| `repo` + `ref` | one of | Git URL cloned at a pinned SHA (see real-repo tasks below) |
+| `check` | recommended | Argv list run in the workdir after the agent finishes; exit 0 = success |
+| `overlay` | no | Local directory copied on top of the repo clone (e.g. to inject a clean-room oracle test) |
+| `env` | no | Extra environment variables passed to the `check` subprocess |
+| `tier` | no | Arbitrary label (`small`/`medium`/`large`/`real`); filter at run time with `--tier` |
+
+**Fixture tasks (no network):** create a directory containing a broken version of the code and
+a test file that defines success. The `check` command should fail before the agent touches it
+and pass after.
+
+```
+fixtures/fix-median-bug/
+  stats.py          ← has the bug
+  test_stats.py     ← oracle; agents are told not to edit this
+```
+
+**Real-repo tasks (larger, unfamiliar codebases):** pin a public repo to the commit *before*
+a real bugfix was merged (so the bug is present), and use `overlay` to inject a clean-room
+oracle test that isn't vendored upstream. This is where context optimizers actually show value
+— the orientation cost is real.
+
+```json
+{
+  "id": "click-synopsis-optional",
+  "prompt": "...",
+  "repo": "https://github.com/pallets/click.git",
+  "ref": "8240d25bdbb8c081b745199620b8f2fe03b10579",
+  "overlay": "fixtures/real/click-synopsis",
+  "check": ["python", "-m", "pytest", "oracle_test.py", "-q"],
+  "env": {"PYTHONPATH": "src"}
+}
+```
+
+The first run clones each repo into a shared cache under the system temp dir; subsequent cells
+clone cheaply from there with `--shared`. Use `--clean-cache` to reset it.
+
+**Two things that determine result quality:**
+
+1. **The task must require orientation.** If the agent can solve it by reading one obvious file,
+   both arms pass at the same cost and there is nothing to measure. Bugs spread across multiple
+   files, or codebases with enough files that a newcomer genuinely needs a map, produce
+   meaningful deltas.
+2. **The oracle must be deterministic.** A flaky oracle (timing-sensitive tests, network calls)
+   corrupts the success rate. Stick to `pytest -q` or a small check script that only reads the
+   workdir.
+
+Run `--dry-run` first to verify the corpus parses, fixtures resolve, and all providers report
+available before committing agent time to a full run.
+
 ---
 
 ## HTML report

@@ -23,6 +23,8 @@ All notable changes to this project are documented here. The format is based on
 - **`CONTRIBUTING.md`**: added "Linting" section documenting `ruff check cram/ tests/` — CI runs
   it on every push but contributors had no instructions to run it locally.
 - **`docs/CASE_STUDY_RUNBOOK.md`**: fixed invalid provider name `cram-context` → `claude-context`.
+- **`.github/PULL_REQUEST_TEMPLATE.md`**: added `ruff check cram/ tests/` to the PR checklist —
+  CI runs it on every push; contributors need the reminder to run it locally.
 
 ## [0.11.0] — 2026-06-25
 

@@ -33,43 +33,31 @@ context optimizers should pay off — a large, unfamiliar codebase with genuine 
 ## Run it
 
 ```bash
-# Real-repo tier (clones pallets/click):
+# Dry run — resolve the grid + provider availability, no execution:
+cram rig examples/rig/bench/corpus.bench.json --dry-run
+
+# One tier, N repeats, JSON out with model label (needs a live runner: claude or codex):
+cram rig examples/rig/bench/corpus.bench.json \
+    --tier small --repeats 3 --runner claude --model claude-sonnet-4-6 --json \
+    > examples/rig/bench/results/cram-bench-v1-sonnet-4-6-$(date +%F).json
+
+# Whole corpus:
+cram rig examples/rig/bench/corpus.bench.json \
+    --repeats 3 --runner claude --model claude-opus-4-8 --json \
+    > examples/rig/bench/results/cram-bench-v1-opus-4-8-$(date +%F).json
+```
+
+`--repeats N` runs each (task × provider) cell N times in isolated workdirs so the summary
+reports variance (`eff_tokens_stdev`). `--model` labels the result's `meta` so rows from
+different models are distinguishable in the leaderboard.
+
+```bash
+# Real-repo tier (clones pallets/click — requires network):
 cram rig examples/rig/bench/corpus.real.json \
-    --providers baseline,cram --runner claude --repeats 3 --json \
-    > examples/rig/bench/results/cram-bench-real-v1-<model>-$(date +%F).json
+    --providers baseline,cram --runner claude --repeats 3 \
+    --model claude-opus-4-8 --json \
+    > examples/rig/bench/results/cram-bench-real-v1-opus-4-8-$(date +%F).json
 ```
-
-```bash
-# Dry run — resolve the grid + provider availability, no execution:
-cram rig examples/rig/bench/corpus.bench.json --dry-run
-
-# One tier, N repeats per cell, JSON out (needs a live runner: claude or codex):
-cram rig examples/rig/bench/corpus.bench.json \
-    --tier small --repeats 3 --runner claude --json \
-    > examples/rig/bench/results/claude-sonnet-$(date +%F).json
-
-# Whole corpus:
-cram rig examples/rig/bench/corpus.bench.json --repeats 3 --runner claude --json > result.json
-```
-
-`--repeats N` runs each (task × provider) cell N times in isolated workdirs so the summary can
-report variance (`eff_tokens_stdev`).
-
-```bash
-# Dry run — resolve the grid + provider availability, no execution:
-cram rig examples/rig/bench/corpus.bench.json --dry-run
-
-# One tier, N repeats per cell, JSON out (needs a live runner: claude or codex):
-cram rig examples/rig/bench/corpus.bench.json \
-    --tier small --repeats 3 --runner claude --json \
-    > examples/rig/bench/results/claude-sonnet-$(date +%F).json
-
-# Whole corpus:
-cram rig examples/rig/bench/corpus.bench.json --repeats 3 --runner claude --json > result.json
-```
-
-`--repeats N` runs each (task × provider) cell N times in isolated workdirs so the summary can
-report variance (`eff_tokens_stdev`).
 
 ## Leaderboard
 

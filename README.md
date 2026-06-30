@@ -546,7 +546,8 @@ Action inputs:
 | `compare-json` | a single `cram audit --compare ... --json` document (alternative to `file-a`/`file-b` for `compare`) |
 | `report-json` | a single `cram audit --json` document (`report` mode) |
 | `tolerance` | allowed success-rate drop before `rig` mode fails the check (default `0.0`) |
-| `out` | also write the rendered markdown to this file path (useful for job summaries) |
+| `comment` | post/update a sticky PR comment (default `true`; set `false` to suppress) |
+| `github-token` | token used to post the comment (defaults to `github.token`) |
 
 `cram init --team` drops a starter `cram-audit.yml` (and `cram-sync.yml`) into
 `.github/workflows/`. On fork PRs where commenting is blocked, the action falls back to the job

@@ -35,6 +35,17 @@ python -m pytest tests/test_rig.py -q
 All PRs must keep the suite green. CI runs the matrix on Python 3.10–3.13 plus a package
 build/smoke job and a version-drift guard (`tests/test_version.py`).
 
+## Linting
+
+CI runs `ruff` on every push. Run it locally before opening a PR:
+
+```bash
+ruff check cram/ tests/
+```
+
+`ruff` is included in the `dev` extras (`pip install -e '.[mcp,dev]'`). Config lives in
+`pyproject.toml` — a small set of ignored rules for deliberate compact-style patterns.
+
 ## Workflow
 
 1. Branch off `main` with a descriptive name: `feat/...`, `fix/...`, `docs/...`, `chore/...`.

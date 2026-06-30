@@ -109,7 +109,7 @@ To show a remediation *reduces* the waste, run a second arm with the fix applied
 ```bash
 cram audit --compare baseline/ remediated/   # side-by-side with deltas
 # or, observational over real sessions:
-cram rig --observe cram-context --days 30
+cram rig --observe claude-context --days 30
 ```
 - Here a **light oracle** returns — but only "the task still completes" (tests
   still pass / the diff still lands), NOT "optimal quality." Report it alongside

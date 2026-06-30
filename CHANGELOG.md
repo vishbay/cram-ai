@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-06-30
+
+Documentation and accuracy fixes; no functional changes.
+
 ### Changed
 - **README**: added corpus authoring guide to the `cram rig` section — corpus JSON schema, fixture
   vs real-repo tasks, overlay/env fields, oracle determinism tips, `--dry-run` first advice.
@@ -19,12 +23,17 @@ All notable changes to this project are documented here. The format is based on
   `comment` and `github-token` inputs.
 - **`examples/rig/bench/README.md`**: removed duplicate "Run it" block; added `--model` to all
   run examples so committed result files carry proper metadata for the leaderboard.
-- **`action.yml`**: bumped stale `cram-version` default from `0.9.0` to `0.11.0`.
+- **`action.yml`**: bumped stale `cram-version` default from `0.9.0` to `0.11.1`.
 - **`CONTRIBUTING.md`**: added "Linting" section documenting `ruff check cram/ tests/` — CI runs
   it on every push but contributors had no instructions to run it locally.
 - **`docs/CASE_STUDY_RUNBOOK.md`**: fixed invalid provider name `cram-context` → `claude-context`.
-- **`.github/PULL_REQUEST_TEMPLATE.md`**: added `ruff check cram/ tests/` to the PR checklist —
-  CI runs it on every push; contributors need the reminder to run it locally.
+- **`.github/PULL_REQUEST_TEMPLATE.md`**: added `ruff check cram/ tests/` to the PR checklist.
+
+### Fixed (backfilled in changelog)
+- **CHANGELOG**: added missing `[0.10.0]` and `[0.11.0]` footer comparison links; corrected
+  `[Unreleased]` target from `v0.9.0` to `v0.11.0`.
+- **CHANGELOG [0.8.2]**: backfilled `--runner codex` / `CodexRunner`, `claude-context` provider,
+  and `--observe` mode — all present before 0.8.0 but never recorded.
 
 ## [0.11.0] — 2026-06-25
 
@@ -232,7 +241,8 @@ benchmark — and the case study reports cram's own context layer honestly (incl
 ### Added
 - Audit-first repositioning: see where your agent tokens go.
 
-[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/vishbay/cram-ai/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/vishbay/cram-ai/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/vishbay/cram-ai/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/vishbay/cram-ai/compare/v0.8.3...v0.9.0

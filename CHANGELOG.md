@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format is based on
   `CRAM_CODEX_TIMEOUT`, `CRAM_CLAUDE_CONTEXT_CMD`).
 - **README**: filled `cram rig` gaps — `--json`/`--model` leaderboard workflow, `cram audit --path`,
   and CI action inputs (`compare-json`, `report-json`, `tolerance`, `out`).
+- **README**: corrected CI action inputs table — removed non-existent `out` input, added real
+  `comment` and `github-token` inputs.
+- **`examples/rig/bench/README.md`**: removed duplicate "Run it" block; added `--model` to all
+  run examples so committed result files carry proper metadata for the leaderboard.
+- **`action.yml`**: bumped stale `cram-version` default from `0.9.0` to `0.11.0`.
+- **`CONTRIBUTING.md`**: added "Linting" section documenting `ruff check cram/ tests/` — CI runs
+  it on every push but contributors had no instructions to run it locally.
+- **`docs/CASE_STUDY_RUNBOOK.md`**: fixed invalid provider name `cram-context` → `claude-context`.
 
 ## [0.11.0] — 2026-06-25
 

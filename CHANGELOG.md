@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **README**: added corpus authoring guide to the `cram rig` section — corpus JSON schema, fixture
+  vs real-repo tasks, overlay/env fields, oracle determinism tips, `--dry-run` first advice.
+- **README**: filled undocumented flags (`cram add --replace`/`--target`, `cram decisions --days`,
+  `cram init [path]`, `cram hook ... [path]`) and environment variables (`CRAM_MODEL_PRICES`,
+  `CRAM_DEBUG`, `CLAUDE_CODE_EXECPATH`, `CODEX_EXECPATH`, `CRAM_OLLAMA_TIMEOUT`,
+  `CRAM_CODEX_TIMEOUT`, `CRAM_CLAUDE_CONTEXT_CMD`).
+- **README**: filled `cram rig` gaps — `--json`/`--model` leaderboard workflow, `cram audit --path`,
+  and CI action inputs (`compare-json`, `report-json`, `tolerance`, `out`).
+
 ## [0.11.0] — 2026-06-25
 
 ### Added
@@ -127,6 +137,19 @@ benchmark — and the case study reports cram's own context layer honestly (incl
   a starter `cram-audit.yml`.
 - **Contributor scaffolding**: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
   `CHANGELOG.md`, a PR template, and bug/feature issue templates.
+- **`--runner codex`** (`CodexRunner`): controlled-mode support for Codex noninteractive mode
+  (`codex exec`); routes the `cram` provider context through `AGENTS.md`. Reuses the existing
+  login — no API key needed. (Backfilled: present since before 0.8.0 but not recorded.)
+- **`claude-context` provider** (`ClaudeContextAdapter`): referee adapter for the
+  `@zilliz/claude-context-mcp` semantic code-search optimizer; real availability check (requires
+  `npx` + an embedding key); writes `.mcp.json` so `claude -p` loads the server; `detector`
+  signature enables observational A/B. Launch command overridable via `CRAM_CLAUDE_CONTEXT_CMD`.
+  (Backfilled: present since before 0.8.0 but not recorded.)
+- **`--observe <optimizer>`**: observational A/B mode — re-parses a repo's real Claude Code
+  transcripts, tags sessions by whether the optimizer's tool detector fired, and compares
+  effective tokens and reads-before-edit across the two groups. No corpus or controlled run
+  needed; caveat that groups aren't matched on task difficulty. (Backfilled: present since initial
+  `cram rig` ship but not recorded.)
 
 ### Changed
 - `cram rig`: the `cram` arm now genuinely competes — `_prepare_workdir` `git init`s the workdir
@@ -199,7 +222,9 @@ benchmark — and the case study reports cram's own context layer honestly (incl
 ### Added
 - Audit-first repositioning: see where your agent tokens go.
 
-[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/vishbay/cram-ai/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/vishbay/cram-ai/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/vishbay/cram-ai/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/vishbay/cram-ai/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/vishbay/cram-ai/compare/v0.8.1...v0.8.2

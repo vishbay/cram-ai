@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.2] — 2026-06-30
+
+A transcript-parsing robustness fix: previously-dropped Claude sessions now
+appear in audits.
+
 ### Fixed
 - **`parse_claude` dropped a whole session on one non-dict JSONL line.** A line that
   was valid JSON but not an object (a bare `null`, number, or string) caused `.get()`
@@ -260,7 +265,8 @@ benchmark — and the case study reports cram's own context layer honestly (incl
 ### Added
 - Audit-first repositioning: see where your agent tokens go.
 
-[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/vishbay/cram-ai/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/vishbay/cram-ai/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/vishbay/cram-ai/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/vishbay/cram-ai/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/vishbay/cram-ai/compare/v0.9.0...v0.10.0
